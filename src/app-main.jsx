@@ -1,0 +1,984 @@
+/* ───────────── MAIN APP ───────────── */
+
+const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
+  "theme": "default",
+  "titleStyle": "serif",
+  "density": "comfortable"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULS);
+  const [tweaksOpen, setTweaksOpen] = React.useState(false);
+  const [mode, setMode] = React.useState('compositor');
+  const [lang, setLang] = React.useState('es');
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [previewHidden, setPreviewHidden] = React.useState(false);
+  const [rightMode, setRightMode] = React.useState('preview');
+  const [previewTab, setPreviewTab] = React.useState('visual');
+  const [device, setDevice] = React.useState('desktop');
+  const [brandFilter, setBrandFilter] = React.useState(() => {
+    try { const v = localStorage.getItem('bomedia-ui-sidebar-brand'); return v ? JSON.parse(v) : 'all'; } catch (e) { return 'all'; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('bomedia-ui-sidebar-brand', JSON.stringify(brandFilter)); } catch (e) {}
+  }, [brandFilter]);
+  const [selectedId, setSelectedId] = React.useState(null);
+  const [cmdkOpen, setCmdkOpen] = React.useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = React.useState(false);
+  const [editingTemplateId, setEditingTemplateId] = React.useState(null);
+  const [rightPanelWidth, setRightPanelWidth] = React.useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem('bomedia-ui-right-panel-w'), 10);
+      if (Number.isFinite(v) && v >= 360 && v <= 1100) return v;
+    } catch (e) {}
+    return 560;
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('bomedia-ui-right-panel-w', String(rightPanelWidth)); } catch (e) {}
+  }, [rightPanelWidth]);
+
+  // Drag-to-resize the right panel: pointer events on the .right-panel-resizer
+  // handle. Width is bounded between 360 (under that the email iframe can't
+  // breathe) and 1100 (above that the canvas becomes unreadable).
+  const startResize = React.useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = rightPanelWidth;
+    const move = (ev) => {
+      const next = Math.max(360, Math.min(1100, startW + (startX - ev.clientX)));
+      setRightPanelWidth(next);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('resizing-panel');
+    };
+    document.body.classList.add('resizing-panel');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, [rightPanelWidth]);
+  const [currentUserId, setCurrentUserId] = React.useState(() => {
+    try { return sessionStorage.getItem('bomedia_session_user') || null; } catch (e) { return null; }
+  });
+  const [loginValue, setLoginValue] = React.useState('');
+  const [loginUserId, setLoginUserId] = React.useState('admin');
+  const [loginError, setLoginError] = React.useState(false);
+  const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'cloud' | 'local' | ''
+
+  // ─── appState (real data) — start from localStorage+defaults, then hydrate from Supabase ───
+  const [appState, setAppState] = React.useState(() => {
+    const stored = getStorageData();
+    if (stored) {
+      const defaults = getDefaultState();
+      if (!stored.brands) stored.brands = defaults.brands;
+      if (!stored.standaloneBlocks) stored.standaloneBlocks = defaults.standaloneBlocks;
+      if (!stored.templates) stored.templates = defaults.templates;
+      // Backwards-compat: if there's no users[] yet, create a single admin
+      // and migrate the legacy boPasswordHash into it.
+      if (!Array.isArray(stored.users) || stored.users.length === 0) {
+        stored.users = [{
+          id: 'admin',
+          name: 'Admin',
+          role: 'admin',
+          passwordHash: stored.boPasswordHash || (typeof DEFAULT_BO_HASH !== 'undefined' ? DEFAULT_BO_HASH : 'a1bfe0bf4fa8f02f1969c64276b15f55e455b3dd9f50f11a22fb8c284a9c2f48'),
+          hiddenItems: {},
+          aiStyles: {},
+        }];
+      }
+      // Ensure each user has a valid hiddenItems + aiStyles object
+      stored.users = stored.users.map(u => Object.assign({ hiddenItems: {}, aiStyles: {} }, u));
+      if (typeof stored.openaiKey !== 'string') stored.openaiKey = '';
+      return mergeI18nFromDefaults(stored);
+    }
+    return getDefaultState();
+  });
+
+  // Persist current user across sessions (sessionStorage = per-tab)
+  React.useEffect(() => {
+    try {
+      if (currentUserId) sessionStorage.setItem('bomedia_session_user', currentUserId);
+      else sessionStorage.removeItem('bomedia_session_user');
+    } catch (e) {}
+  }, [currentUserId]);
+
+  // Resolve current user from appState.users
+  const currentUser = (appState.users || []).find(u => u.id === currentUserId) || null;
+  const isAdmin = currentUser?.role === 'admin';
+
+  // If the stored session user no longer exists in appState (e.g. admin
+  // deleted them), drop the session.
+  React.useEffect(() => {
+    if (currentUserId && !currentUser && (appState.users || []).length > 0) {
+      setCurrentUserId(null);
+    }
+  }, [currentUserId, currentUser, appState.users]);
+
+  // ─── Draft blocks (v3 shape) — persisted to localStorage ───
+  // Start empty so the user sees the template-suggestions empty state on
+  // first load. Hardcoded textIds in earlier defaults pointed to data that
+  // no longer exists in Supabase, leaving stale "Texto vacío" blocks.
+  const [blocks, setBlocks] = React.useState(() => {
+    const draft = getDraftBlocks();
+    if (draft && draft.length > 0) return draft;
+    return [];
+  });
+
+  // Auto-save draft blocks
+  React.useEffect(() => { saveDraftBlocks(blocks); }, [blocks]);
+
+  // Keep the v3-compat globals in sync with the live appState.
+  // Components (Sidebar, BlockCard, Inspector, etc.) read from window.PRODUCTS /
+  // window.BRANDS / … directly, so when the user edits anything from Backoffice
+  // we must republish the arrays so next render sees the fresh data.
+  React.useEffect(() => {
+    window.PRODUCTS = appState.products || [];
+    window.BRANDS = appState.brands || [];
+    window.PREWRITTEN_TEXTS = appState.prewrittenTexts || [];
+    window.TEMPLATES = appState.templates || [];
+    window.COMPOSED_BLOCKS = appState.composedBlocks || [];
+    window.STANDALONE_BLOCKS = (appState.standaloneBlocks || []).map(sb => Object.assign({}, sb, {
+      type: sb.blockType,
+    }));
+    window.OPENAI_KEY = appState.openaiKey || '';
+  }, [appState]);
+
+  // Publish current user's AI tone prompts so callOpenAI() picks them up
+  // automatically. When the user logs out, fall back to defaults.
+  React.useEffect(() => {
+    window.AI_STYLES = (currentUser && currentUser.aiStyles) || {};
+  }, [currentUser]);
+
+  // One-shot migration: if the user had a key in sessionStorage from before
+  // we moved it to Supabase, copy it into appState the first time.
+  const migratedKeyRef = React.useRef(false);
+  React.useEffect(() => {
+    if (migratedKeyRef.current) return;
+    if (syncStatus === 'loading') return;
+    if (appState.openaiKey) { migratedKeyRef.current = true; return; }
+    let legacy = '';
+    try { legacy = sessionStorage.getItem('bomedia_openai_key') || ''; } catch (e) {}
+    if (legacy) {
+      migratedKeyRef.current = true;
+      setAppState(prev => ({ ...prev, openaiKey: legacy }));
+    }
+  }, [appState, syncStatus]);
+
+  // Auto-save appState to localStorage + Supabase (debounced)
+  const saveTimer = React.useRef(null);
+  React.useEffect(() => {
+    if (syncStatus === 'loading') return;
+    saveStorageData(appState);
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { saveToSupabase(appState); }, 1500);
+    return () => clearTimeout(saveTimer.current);
+  }, [appState, syncStatus]);
+
+  // Initial Supabase hydration
+  const loadedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    loadFromSupabase().then(cloudData => {
+      if (cloudData && cloudData.products) {
+        const defaults = getDefaultState();
+        if (!cloudData.brands) cloudData.brands = defaults.brands;
+        if (!cloudData.standaloneBlocks) cloudData.standaloneBlocks = defaults.standaloneBlocks;
+        if (!cloudData.templates) cloudData.templates = defaults.templates;
+        // Multi-user migration: pre-existing Supabase rows have no users[].
+        // Promote the legacy boPasswordHash into a default admin so the app
+        // remains usable with the same credentials.
+        if (!Array.isArray(cloudData.users) || cloudData.users.length === 0) {
+          cloudData.users = [{
+            id: 'admin',
+            name: 'Admin',
+            role: 'admin',
+            passwordHash: cloudData.boPasswordHash || (typeof DEFAULT_BO_HASH !== 'undefined' ? DEFAULT_BO_HASH : 'a1bfe0bf4fa8f02f1969c64276b15f55e455b3dd9f50f11a22fb8c284a9c2f48'),
+            hiddenItems: {},
+            aiStyles: {},
+          }];
+        }
+        cloudData.users = cloudData.users.map(u => Object.assign({ hiddenItems: {}, aiStyles: {} }, u));
+        if (typeof cloudData.openaiKey !== 'string') cloudData.openaiKey = '';
+        cloudData = mergeI18nFromDefaults(cloudData);
+        setAppState(cloudData);
+        saveStorageData(cloudData);
+        setSyncStatus('cloud');
+      } else {
+        setSyncStatus('local');
+        // Push current/default state to Supabase
+        saveToSupabase(appState);
+      }
+      setTimeout(() => setSyncStatus(''), 3000);
+    });
+  }, []);
+
+  // Apply theme
+  React.useEffect(() => {
+    const themeMap = { default: '', warm: 'warm', cool: 'cool', dark: 'dark' };
+    document.documentElement.dataset.theme = themeMap[tweaks.theme] || '';
+  }, [tweaks.theme]);
+
+  // Keyboard shortcut
+  React.useEffect(() => {
+    const h = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setCmdkOpen(v => !v); }
+      if (e.key === 'Escape') { setCmdkOpen(false); setLoginPrompt(false); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+
+  // Tweaks edit-mode protocol
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOpen(false);
+    };
+    window.addEventListener('message', handler);
+    try { window.parent.postMessage({ type: '__edit_mode_available' }, '*'); } catch(err) {}
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const updateTweak = (key, val) => {
+    const next = { ...tweaks, [key]: val };
+    setTweaks(next);
+    try { window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*'); } catch(err) {}
+  };
+
+  // ─── Template expansion ───
+  // Supports two template schemas:
+  //  - Legacy:  tpl.blocks = ['text-001', 'block-002', ...]  (refs to existing texts/composed)
+  //  - Inline:  tpl.compositorBlocks = [ { type:'text', text:'…', i18n:{…} }, { type:'product_pair', product1, product2 }, … ]
+  const expandTemplate = (tplId) => {
+    const tpl = (appState.templates || []).find(t => t.id === tplId);
+    if (!tpl) return [];
+    const expanded = [];
+
+    // Inline blocks (newer Supabase schema) — pass through verbatim, normalising
+    // text blocks to v3's _overrides shape so i18n + body survive.
+    if (Array.isArray(tpl.compositorBlocks) && tpl.compositorBlocks.length > 0) {
+      for (const cb of tpl.compositorBlocks) {
+        if (!cb || !cb.type) continue;
+        if (cb.type === 'text') {
+          // v3 text blocks store translations in `overridesByLang` (the v3→v2
+          // converter in app-email-gen.jsx only reads from this field).
+          const overridesByLang = { es: cb.text || '' };
+          if (cb.i18n) {
+            for (const [l, v] of Object.entries(cb.i18n)) {
+              if (v && v.text) overridesByLang[l] = v.text;
+            }
+          }
+          expanded.push({ type: 'text', overridesByLang });
+        } else {
+          // Pass through other block kinds (product_pair, product_trio, brand_strip, pimpam_hero, etc.)
+          expanded.push(Object.assign({}, cb));
+        }
+      }
+      return expanded;
+    }
+
+    // Legacy ref-based template
+    for (const ref of (tpl.blocks || [])) {
+      // prewritten text?
+      if ((appState.prewrittenTexts || []).some(t => t.id === ref)) {
+        expanded.push({ type: 'text', textId: ref });
+        continue;
+      }
+      // composed block? expand its innards
+      const cb = (appState.composedBlocks || []).find(c => c.id === ref);
+      if (cb) {
+        if (cb.introText) expanded.push({ type: 'text', overrideText: cb.introText });
+        if (cb.brandStrip && cb.brandStrip !== 'none') expanded.push({ type: 'brandstrip', brands: [cb.brandStrip] });
+        const prods = cb.products || [];
+        for (const pid of prods) expanded.push({ type: 'product', productId: pid });
+        if (cb.includeHero) {
+          const heroSb = (appState.standaloneBlocks || []).find(s => s.blockType === 'pimpam_hero');
+          expanded.push({ type: 'hero', standaloneId: heroSb?.id });
+        }
+        if (cb.includeSteps) {
+          const stepsSb = (appState.standaloneBlocks || []).find(s => s.blockType === 'pimpam_steps');
+          expanded.push({ type: 'pimpam_steps', standaloneId: stepsSb?.id });
+        }
+      }
+    }
+    return expanded;
+  };
+
+  // mkId combines a counter with a base36 timestamp + random suffix to avoid
+  // collisions with IDs already present in the draft loaded from localStorage.
+  const nextId = React.useRef(0);
+  const mkId = () => {
+    const c = ++nextId.current;
+    return 'b' + c + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  };
+
+  // Convert the current v3 blocks array back into a compositorBlocks-shaped
+  // array suitable for storing inside a template.
+  const blocksToCompositorBlocks = (v3Blocks) => {
+    const out = [];
+    const texts = appState.prewrittenTexts || [];
+    for (const b of (v3Blocks || [])) {
+      switch (b.type) {
+        case 'text': {
+          // 1. Reference to an existing prewritten text
+          let textEs = '', i18n = {};
+          if (b.textId) {
+            const src = texts.find(t => t.id === b.textId);
+            if (src) {
+              textEs = src.text || '';
+              if (src.i18n) {
+                for (const [l, v] of Object.entries(src.i18n)) {
+                  if (v && v.text) i18n[l] = { text: v.text };
+                }
+              }
+            }
+          }
+          // 2. Per-language overrides (overridesByLang)
+          if (b.overridesByLang) {
+            if (b.overridesByLang.es != null) textEs = b.overridesByLang.es;
+            for (const [l, v] of Object.entries(b.overridesByLang)) {
+              if (l !== 'es' && v != null) i18n[l] = { text: v };
+            }
+          }
+          // 3. Single-shot override
+          if (b.overrideText) textEs = b.overrideText;
+          out.push(Object.assign({ type: 'text', text: textEs }, Object.keys(i18n).length ? { i18n } : {}));
+          break;
+        }
+        case 'product':
+          if (b.productId) out.push({ type: 'product_single', product1: b.productId });
+          break;
+        case 'product_single':
+        case 'product_pair':
+        case 'product_trio':
+          out.push(Object.assign({}, b, { id: undefined }));
+          break;
+        case 'brand_strip':
+        case 'brand_artisjet':
+        case 'brand_mbo':
+        case 'brand_pimpam':
+        case 'brand_smartjet':
+        case 'brand_flux':
+          out.push({ type: 'brand_strip', brand: b.brand || b.type.replace('brand_', '') });
+          break;
+        case 'brandstrip': {
+          const enabled = b.brands || [];
+          for (const bid of enabled) out.push({ type: 'brand_strip', brand: bid });
+          break;
+        }
+        case 'pimpam_hero':
+        case 'pimpam_steps':
+        case 'freebird':
+        case 'video':
+          out.push(Object.assign({}, b, { id: undefined }));
+          break;
+        case 'composed':
+          // Keep as-is — when this template is loaded, the composed block resolves via its id
+          if (b.composedId) out.push({ type: 'composed', composedId: b.composedId });
+          break;
+        // header / footer / hero (v3-only stubs) are skipped: they don't have
+        // a stable representation in the template schema.
+        default: break;
+      }
+    }
+    return out.filter(b => b && b.type);
+  };
+
+  // Load a template into the canvas (used by "Editar plantilla" in BO).
+  const loadTemplateIntoCanvas = (tplId) => {
+    const tpl = (appState.templates || []).find(t => t.id === tplId);
+    if (!tpl) return;
+    const exp = expandTemplate(tplId);
+    setBlocks(exp.map(e => ({ ...e, id: mkId() })));
+    setEditingTemplateId(tplId);
+    setSelectedId(null);
+    setMode('compositor');
+  };
+
+  // Save the current canvas into an existing template (overwrite its blocks).
+  const saveCurrentToTemplate = (tplId) => {
+    if (!tplId) return;
+    const compBlocks = blocksToCompositorBlocks(blocks);
+    setAppState(prev => ({
+      ...prev,
+      templates: (prev.templates || []).map(t => t.id === tplId
+        ? { ...t, compositorBlocks: compBlocks, blocks: [] }
+        : t),
+    }));
+  };
+
+  // Save the current canvas as a brand new template.
+  const saveCurrentAsNewTemplate = (name, opts) => {
+    const compBlocks = blocksToCompositorBlocks(blocks);
+    const id = 'tpl-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    const tpl = {
+      id,
+      name: name || 'Plantilla sin título',
+      desc: (opts && opts.desc) || '',
+      brand: (opts && opts.brand) || 'mix',
+      colorClass: (opts && opts.colorClass) || 'gray',
+      compositorBlocks: compBlocks,
+      blocks: [],
+      visible: true,
+    };
+    setAppState(prev => ({
+      ...prev,
+      templates: [...(prev.templates || []), tpl],
+    }));
+    setEditingTemplateId(id);
+    return tpl;
+  };
+  // When the user clicks the "+" insert-zone between two blocks the canvas
+  // sets this index — the next addBlock() call splices at that position
+  // (after-index = insertAfter, so the new block lands right below) and the
+  // index resets back to null.
+  const [insertAfter, setInsertAfter] = React.useState(null);
+
+  // Helper that splices `arr` so the new items land right after `insertAfter`
+  // (or appends if it's null/out of range). Resets the insertion target.
+  const placeBlocks = (prev, items) => {
+    if (insertAfter == null || insertAfter < 0 || insertAfter >= prev.length) {
+      return [...prev, ...items];
+    }
+    const out = prev.slice();
+    out.splice(insertAfter + 1, 0, ...items);
+    return out;
+  };
+
+  const addBlock = (spec) => {
+    if (spec.templateId) {
+      const exp = expandTemplate(spec.templateId);
+      setBlocks(prev => placeBlocks(prev, exp.map(e => ({ ...e, id: mkId() }))));
+      setInsertAfter(null);
+      return;
+    }
+    // "text-blank" → empty text block, ready to write into. Selected on add
+    // so the inline editor opens immediately.
+    if (spec.type === 'text-blank') {
+      const newId = mkId();
+      setBlocks(prev => placeBlocks(prev, [{ id: newId, type: 'text', overridesByLang: { es: '' } }]));
+      setTimeout(() => { setSelectedId(newId); setRightMode('edit'); }, 0);
+      setInsertAfter(null);
+      return;
+    }
+    const b = { id: mkId(), type: spec.type };
+    if (spec.productId) b.productId = spec.productId;
+    if (spec.textId) b.textId = spec.textId;
+    if (spec.composedId) b.composedId = spec.composedId;
+    if (spec.standaloneId) {
+      b.standaloneId = spec.standaloneId;
+      const sb = (appState.standaloneBlocks || []).find(s => s.id === spec.standaloneId);
+      const cfg = sb?.config || {};
+      if (b.type === 'product_single') {
+        b.product1 = cfg.defaultProduct || 'young';
+      } else if (b.type === 'product_pair') {
+        b.product1 = cfg.defaultProduct1 || 'young';
+        b.product2 = cfg.defaultProduct2 || '3000pro';
+      } else if (b.type === 'product_trio') {
+        b.product1 = cfg.defaultProduct1 || 'uv1612g';
+        b.product2 = cfg.defaultProduct2 || 'uv1812';
+        b.product3 = cfg.defaultProduct3 || 'uv2513';
+      } else if (b.type === 'brand_strip') {
+        b.brand = cfg.brand || 'artisjet';
+      } else if (
+        b.type === 'pimpam_hero' || b.type === 'product_hero' || b.type === 'hero' ||
+        b.type === 'pimpam_steps' || b.type === 'video' || b.type === 'freebird'
+      ) {
+        b._sourceType = 'standalone';
+        b._sourceId = spec.standaloneId;
+        // product_hero standalones use a different schema — they only store
+        // `config.defaultProduct`. Materialize the hero fields from that
+        // product so the rest of the pipeline (preview, editor, email-gen)
+        // can work uniformly.
+        if (b.type === 'product_hero' && cfg.defaultProduct) {
+          const products = appState.products || [];
+          const p = products.find(x => x.id === cfg.defaultProduct);
+          if (p) {
+            b.heroImage = p.img;
+            b.heroTitle = p.name;
+            b.heroSubtitle = p.desc;
+            b.heroBullets = [p.feat1, p.feat2].filter(Boolean);
+            b.heroCtaButtons = (p.link ? [{ text:'Más información', url:p.link, bg:p.accent || '#1d4ed8', color:'#ffffff' }] : []);
+            b.heroBgColor = '#ffffff';
+          }
+          // Normalise to the unified type so all editors/renderers treat
+          // it as a regular hero from now on.
+          b.type = 'pimpam_hero';
+        }
+      }
+    }
+    // Direct-add fallbacks when not coming from a standalone
+    if (!spec.standaloneId) {
+      if (b.type === 'product_pair' && !b.product1) { b.product1 = 'young'; b.product2 = '3000pro'; }
+      if (b.type === 'product_trio' && !b.product1) { b.product1 = 'uv1612g'; b.product2 = 'uv1812'; b.product3 = 'uv2513'; }
+      if (b.type === 'brand_strip' && !b.brand) b.brand = 'artisjet';
+    }
+    setBlocks(prev => placeBlocks(prev, [b]));
+    setInsertAfter(null);
+  };
+
+  const updateBlock = (id, b) => setBlocks(prev => prev.map(x => x.id === id ? b : x));
+  const deleteBlock = (id) => setBlocks(prev => prev.filter(x => x.id !== id));
+  const duplicateBlock = (id) => setBlocks(prev => {
+    const i = prev.findIndex(x => x.id === id);
+    if (i < 0) return prev;
+    const copy = { ...prev[i], id: mkId() };
+    return [...prev.slice(0, i+1), copy, ...prev.slice(i+1)];
+  });
+  const moveBlock = (id, dir) => setBlocks(prev => {
+    const i = prev.findIndex(x => x.id === id);
+    if (i < 0) return prev;
+    const j = i + dir;
+    if (j < 0 || j >= prev.length) return prev;
+    const arr = [...prev];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    return arr;
+  });
+
+  const goBackoffice = () => setMode('backoffice');
+  const submitLogin = () => {
+    const user = (appState.users || []).find(u => u.id === loginUserId);
+    if (!user) { setLoginError(true); return; }
+    checkPassword(loginValue, user.passwordHash, DEFAULT_BO_HASH).then(({ match }) => {
+      if (match) {
+        setCurrentUserId(user.id);
+        setLoginValue('');
+        setLoginError(false);
+      } else {
+        setLoginError(true);
+      }
+    });
+  };
+  const logout = () => {
+    setCurrentUserId(null);
+    setMode('compositor');
+    setLoginValue('');
+    setLoginError(false);
+  };
+
+  // Helpers for the visibility model.
+  const isItemHidden = (collection, id) => {
+    if (!currentUser) return false;
+    return Array.isArray(currentUser.hiddenItems?.[collection]) && currentUser.hiddenItems[collection].includes(id);
+  };
+  const setItemHiddenForCurrentUser = (collection, id, hidden) => {
+    if (!currentUser) return;
+    setAppState(prev => ({
+      ...prev,
+      users: (prev.users || []).map(u => {
+        if (u.id !== currentUser.id) return u;
+        const list = Array.isArray(u.hiddenItems?.[collection]) ? u.hiddenItems[collection] : [];
+        const next = hidden ? Array.from(new Set([...list, id])) : list.filter(x => x !== id);
+        return { ...u, hiddenItems: { ...u.hiddenItems, [collection]: next } };
+      }),
+    }));
+  };
+  // When a non-admin user creates an item, hide it from all OTHER users by
+  // default. Admin-created items are visible to everyone.
+  const autoHideForOthers = (collection, id) => {
+    if (!currentUser || currentUser.role === 'admin') return;
+    setAppState(prev => ({
+      ...prev,
+      users: (prev.users || []).map(u => {
+        if (u.id === currentUser.id) return u;
+        const list = Array.isArray(u.hiddenItems?.[collection]) ? u.hiddenItems[collection] : [];
+        return { ...u, hiddenItems: { ...u.hiddenItems, [collection]: Array.from(new Set([...list, id])) } };
+      }),
+    }));
+  };
+
+  // Generate the live email HTML once per render; Preview consumes it.
+  const emailHtml = React.useMemo(() => {
+    return renderEmailHtml(blocks, appState, lang);
+  }, [blocks, appState, lang]);
+
+  const blockCount = blocks.length;
+  const syncLabel = syncStatus === 'loading' ? 'Cargando…'
+    : syncStatus === 'cloud' ? 'Sincronizado (nube)'
+    : syncStatus === 'local' ? 'Local (sin nube)'
+    : 'Sincronizado';
+
+  return (
+    <div className="app-shell" style={{ '--right-panel-w': rightPanelWidth + 'px' }}>
+      <header className="topbar">
+        <div className="topbar-brand">
+          <div className="topbar-logo">b</div>
+          <div>
+            <div className="topbar-title">bomedia<span className="topbar-title-sub">email composer</span></div>
+          </div>
+        </div>
+
+        <div className="topbar-crumbs">
+          <button
+            className={'topbar-crumb' + (mode === 'compositor' ? ' active' : '')}
+            onClick={() => setMode('compositor')}
+          ><Icon name="layers" size={14} /> Compositor</button>
+          <span className="topbar-sep">/</span>
+          <button
+            className={'topbar-crumb' + (mode === 'backoffice' ? ' active' : '')}
+            onClick={goBackoffice}
+          >
+            <Icon name="database" size={14} />
+            Backoffice
+          </button>
+        </div>
+
+        <button className="topbar-search" onClick={() => setCmdkOpen(true)}>
+          <Icon name="search" size={14} />
+          <span>Buscar bloques, productos…</span>
+          <span className="topbar-search-kbd">⌘K</span>
+        </button>
+
+        <div className="topbar-actions">
+          <div className="lang-pill">
+            {LANGS.map(l => (
+              <button key={l} className={lang === l ? 'active' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>
+            ))}
+          </div>
+          {mode === 'compositor' && (
+            <>
+              <button className={'icon-btn' + (previewHidden ? '' : ' active')} onClick={() => setPreviewHidden(v => !v)} title="Preview">
+                <Icon name="eye" size={16} />
+              </button>
+              <button className="icon-btn" title="Copiar HTML — pégalo en Gmail/Outlook con formato" onClick={() => {
+                if (typeof copyHtmlAsRich === 'function') copyHtmlAsRich(emailHtml);
+                else navigator.clipboard.writeText(emailHtml).catch(() => {});
+              }}>
+                <Icon name="code" size={16} />
+              </button>
+              <button className="icon-btn" title="Compartir"><Icon name="share" size={16} /></button>
+            </>
+          )}
+          {currentUser && (
+            <div className="topbar-user" title={currentUser.role === 'admin' ? 'Administrador' : 'Comercial'}>
+              <span className={'topbar-user-dot ' + (currentUser.role === 'admin' ? 'admin' : 'commercial')} />
+              <span className="topbar-user-name">{currentUser.name}</span>
+              <button className="icon-btn" onClick={logout} title="Cerrar sesión" style={{width:24, height:24}}>
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {mode === 'compositor' ? (
+        <div className={'main' + (sidebarCollapsed ? ' sidebar-collapsed' : '') + (previewHidden ? ' preview-hidden' : '')}>
+          <Sidebar
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed(v => !v)}
+            blocks={blocks}
+            onAddBlock={addBlock}
+            brandFilter={brandFilter}
+            setBrandFilter={setBrandFilter}
+            lang={lang}
+            currentUser={currentUser}
+          />
+          <Canvas
+            blocks={blocks}
+            onUpdate={updateBlock}
+            onDelete={deleteBlock}
+            onMove={moveBlock}
+            onDuplicate={duplicateBlock}
+            selectedId={selectedId}
+            setSelectedId={(id) => { setSelectedId(id); if (id) setRightMode('edit'); }}
+            onOpenPalette={(idx) => { if (idx != null) setInsertAfter(idx); setCmdkOpen(true); }}
+            onAddBlock={(spec, idx) => { if (idx != null) setInsertAfter(idx); addBlock(spec); }}
+            onClearBlocks={() => { setBlocks([]); setSelectedId(null); setEditingTemplateId(null); }}
+            onExpandPreview={() => setPreviewModalOpen(true)}
+            editingTemplate={editingTemplateId ? (appState.templates || []).find(t => t.id === editingTemplateId) : null}
+            onExitTemplateEdit={() => setEditingTemplateId(null)}
+            onSaveCurrentTemplate={() => saveCurrentToTemplate(editingTemplateId)}
+            onSaveAsTemplate={(name, opts) => saveCurrentAsNewTemplate(name, opts)}
+            lang={lang}
+            variant={tweaks.titleStyle}
+            emailHtml={emailHtml}
+          />
+          {!previewHidden && (
+            <div className="right-panel" style={{display:'flex', flexDirection:'column', minHeight:0, background:'var(--bg-sunken)', borderLeft:'1px solid var(--border)'}}>
+              <div
+                className="right-panel-resizer"
+                onPointerDown={startResize}
+                onDoubleClick={() => setRightPanelWidth(560)}
+                title="Arrastra para redimensionar · doble click para resetear"
+              />
+              <div className="right-mode">
+                <button
+                  className={'right-mode-btn' + (rightMode === 'preview' ? ' active' : '')}
+                  onClick={() => setRightMode('preview')}
+                >
+                  <Icon name="eye" size={12} /> Preview
+                </button>
+                <button
+                  className={'right-mode-btn' + (rightMode === 'edit' ? ' active' : '')}
+                  onClick={() => { if (!selectedId && blocks[0]) setSelectedId(blocks[0].id); setRightMode('edit'); }}
+                  disabled={!selectedId && blocks.length === 0}
+                  style={{opacity: (!selectedId && blocks.length === 0) ? 0.4 : 1}}
+                >
+                  <Icon name="settings" size={12} /> Editar
+                  {selectedId && <span style={{marginLeft:6, fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text-subtle)'}}>1</span>}
+                </button>
+              </div>
+
+              {rightMode === 'edit' && selectedId ? (
+                <Inspector
+                  block={blocks.find(b => b.id === selectedId)}
+                  onUpdate={updateBlock}
+                  onClose={() => { setSelectedId(null); setRightMode('preview'); }}
+                  onDelete={deleteBlock}
+                  onDuplicate={duplicateBlock}
+                  lang={lang}
+                  setLang={setLang}
+                  onOpenBackoffice={isAdmin ? goBackoffice : null}
+                />
+              ) : rightMode === 'edit' ? (
+                <div style={{padding:40, textAlign:'center', color:'var(--text-muted)', fontSize:13, flex:1, display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', gap:10}}>
+                  <Icon name="sparkles" size={24} />
+                  <div className="serif" style={{fontSize:18}}>Selecciona un bloque</div>
+                  <div style={{fontSize:12}}>Haz click sobre cualquier bloque del canvas para editarlo</div>
+                </div>
+              ) : (
+                <PreviewPanel
+                  blocks={blocks}
+                  device={device}
+                  setDevice={setDevice}
+                  tab={previewTab}
+                  setTab={setPreviewTab}
+                  lang={lang}
+                  emailHtml={emailHtml}
+                  onExpand={() => setPreviewModalOpen(true)}
+                  embedded
+                />
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <Backoffice
+          appState={appState}
+          setAppState={setAppState}
+          brandFilter={brandFilter}
+          setBrandFilter={setBrandFilter}
+          onLoadTemplateInCompositor={(tplId) => loadTemplateIntoCanvas(tplId)}
+          currentUser={currentUser}
+          isItemHidden={isItemHidden}
+          setItemHiddenForCurrentUser={setItemHiddenForCurrentUser}
+          autoHideForOthers={autoHideForOthers}
+        />
+      )}
+
+      <div className="footer">
+        <span className="status"><span className="status-dot" /> {syncLabel}</span>
+        <span className="dot" />
+        <span>Supabase · {syncStatus === 'cloud' ? 'cloud' : 'local'}</span>
+        <span className="dot" />
+        <span>{blockCount} bloques</span>
+        <span className="dot" />
+        <span>{(appState.products || []).length} productos · {(appState.templates || []).length} plantillas</span>
+        <div style={{marginLeft:'auto', display:'flex', gap:16, alignItems:'center'}}>
+          <span>v3.0</span>
+          <span className="dot" />
+          <span>⌘K para comandos</span>
+        </div>
+      </div>
+
+      {previewModalOpen && (
+        <EmailPreviewModal
+          html={emailHtml}
+          lang={lang}
+          onClose={() => setPreviewModalOpen(false)}
+        />
+      )}
+
+      {cmdkOpen && (
+        <CommandPalette
+          appState={appState}
+          currentUser={currentUser}
+          onClose={() => setCmdkOpen(false)}
+          onPick={(item) => {
+            if (item.type === 'template') addBlock({ type: 'template', templateId: item.id });
+            else if (item.type === 'product') addBlock({ type: 'product', productId: item.id });
+            else if (item.type === 'text') addBlock({ type: 'text', textId: item.id });
+            else if (item.type === 'composed') addBlock({ type: 'composed', composedId: item.id });
+            else addBlock({ type: item.type, standaloneId: item.id });
+          }}
+        />
+      )}
+
+      {!currentUser && syncStatus !== 'loading' && (
+        <div className="modal-overlay login-overlay" onClick={e => e.stopPropagation()}>
+          <div className="modal login-modal" onClick={e => e.stopPropagation()}>
+            <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
+              <div className="topbar-logo" style={{width:32, height:32}}>b</div>
+              <div>
+                <h2 style={{fontSize:16, margin:0}}>bomedia <span className="serif" style={{color:'var(--text-muted)'}}>email composer</span></h2>
+                <div style={{fontSize:11, color:'var(--text-muted)', marginTop:2}}>Selecciona usuario y contraseña para continuar.</div>
+              </div>
+            </div>
+            <div className="field" style={{marginTop:12}}>
+              <label className="field-label">Usuario</label>
+              <select
+                className="select"
+                value={loginUserId}
+                onChange={e => { setLoginUserId(e.target.value); setLoginError(false); }}
+              >
+                {(appState.users || []).map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Contraseña</label>
+              <input
+                type="password"
+                className="input"
+                value={loginValue}
+                onChange={e => { setLoginValue(e.target.value); setLoginError(false); }}
+                onKeyDown={e => e.key === 'Enter' && submitLogin()}
+                placeholder="••••••••"
+                autoFocus
+                style={loginError ? {borderColor:'var(--danger)'} : {}}
+              />
+              {loginError && <div style={{fontSize:12, color:'var(--danger)', marginTop:6}}>Usuario o contraseña incorrectos</div>}
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={submitLogin} style={{width:'100%', justifyContent:'center'}}>
+                <Icon name="zap" size={13}/> Entrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tweaksOpen ? (
+        <DraggableTweaks
+          tweaks={tweaks}
+          updateTweak={updateTweak}
+          onClose={() => setTweaksOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function DraggableTweaks({ tweaks, updateTweak, onClose }) {
+  const [pos, setPos] = React.useState(() => {
+    try {
+      const s = localStorage.getItem('tweaks-pos');
+      if (s) return JSON.parse(s);
+    } catch(e) {}
+    return { x: window.innerWidth - 280, y: window.innerHeight - 340 };
+  });
+  const [minimized, setMinimized] = React.useState(() => {
+    try { return localStorage.getItem('tweaks-min') === '1'; } catch(e) { return false; }
+  });
+
+  React.useEffect(() => {
+    try { localStorage.setItem('tweaks-pos', JSON.stringify(pos)); } catch(e) {}
+  }, [pos]);
+  React.useEffect(() => {
+    try { localStorage.setItem('tweaks-min', minimized ? '1' : '0'); } catch(e) {}
+  }, [minimized]);
+
+  const onMouseDown = (e) => {
+    if (e.target.closest('.tweaks-head-btn')) return;
+    const startX = e.clientX, startY = e.clientY;
+    const origX = pos.x, origY = pos.y;
+    const move = (ev) => {
+      const nx = Math.max(8, Math.min(window.innerWidth - 80, origX + ev.clientX - startX));
+      const ny = Math.max(8, Math.min(window.innerHeight - 50, origY + ev.clientY - startY));
+      setPos({ x: nx, y: ny });
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  return (
+    <div
+      className={'tweaks' + (minimized ? ' minimized' : '')}
+      style={{ left: pos.x, top: pos.y, bottom: 'auto', right: 'auto' }}
+    >
+      <div className="tweaks-head" onMouseDown={onMouseDown}>
+        <Icon name="dots" size={14} />
+        <span className="tweaks-head-title">Tweaks</span>
+        <button className="tweaks-head-btn" onClick={() => setMinimized(m => !m)} title={minimized ? 'Expandir' : 'Minimizar'}>
+          <Icon name={minimized ? 'arrowUp' : 'arrowDown'} size={12} />
+        </button>
+        <button className="tweaks-head-btn" onClick={onClose} title="Cerrar">
+          <Icon name="x" size={12} />
+        </button>
+      </div>
+      <div className="tweaks-content">
+        <div className="tweaks-group">
+          <div className="tweaks-label">Tema de la app</div>
+          <div className="tweaks-row">
+            {['default','warm','cool','dark'].map(t => (
+              <button key={t} className={'tweaks-opt' + (tweaks.theme === t ? ' active' : '')} onClick={() => updateTweak('theme', t)}>
+                {t === 'default' ? 'Slate' : t[0].toUpperCase()+t.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="tweaks-group">
+          <div className="tweaks-label">Título del canvas</div>
+          <div className="tweaks-row two">
+            <button className={'tweaks-opt' + (tweaks.titleStyle === 'serif' ? ' active' : '')} onClick={() => updateTweak('titleStyle', 'serif')}>
+              <span className="serif" style={{fontSize:14}}>Serif</span>
+            </button>
+            <button className={'tweaks-opt' + (tweaks.titleStyle === 'sans' ? ' active' : '')} onClick={() => updateTweak('titleStyle', 'sans')}>
+              Sans
+            </button>
+          </div>
+        </div>
+        <div style={{fontSize:10, color:'var(--text-subtle)', fontFamily:'var(--font-mono)', marginTop:10, paddingTop:10, borderTop:'1px solid var(--border)'}}>
+          Arrastra desde la cabecera
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Error boundary so a runtime crash during render doesn't leave a blank page
+class AppErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error('App crashed:', err, info); }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{padding:20, fontFamily:'monospace', fontSize:12, color:'#b91c1c', background:'#fef2f2', minHeight:'100vh'}}>
+          <h2 style={{marginBottom:12}}>Error al renderizar la app</h2>
+          <pre style={{whiteSpace:'pre-wrap'}}>{String(this.state.err?.stack || this.state.err)}</pre>
+          <p style={{marginTop:16, color:'#64748b'}}>Revisa la consola del navegador (F12) para más detalles.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Sanity log — surfaces missing globals before React mounts
+(function sanityCheck() {
+  const needs = ['getDefaultState','createBlock','LANGS','getStorageData','saveStorageData',
+    'getDraftBlocks','saveDraftBlocks','loadFromSupabase','saveToSupabase','copyHtmlAsRich',
+    'renderEmailHtml','mergeI18nFromDefaults','checkPassword','DEFAULT_BO_HASH',
+    'getOpenaiKey','setOpenaiKey','getAiStyles','saveAiStyle','callOpenAI',
+    'Sidebar','Canvas','PreviewPanel','CommandPalette','EmailPreviewModal','Inspector','Backoffice','Icon'];
+  const missing = needs.filter(n => typeof window[n] === 'undefined');
+  if (missing.length) {
+    console.error('bomedia: missing globals →', missing);
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'padding:20px;font-family:monospace;color:#b91c1c;background:#fef2f2;white-space:pre-wrap';
+    pre.textContent = 'bomedia v3: estos símbolos no están definidos en window:\n  ' + missing.join('\n  ') +
+      '\n\nProbable causa: un script no se cargó. Si abriste el archivo con doble-click (file://),' +
+      '\nsírvelo con un servidor local: `python -m http.server 8080` en la carpeta bomedia-v3,' +
+      '\ny abre http://localhost:8080/';
+    document.getElementById('root').appendChild(pre);
+  }
+})();
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AppErrorBoundary><App /></AppErrorBoundary>);
