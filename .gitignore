@@ -1,0 +1,17 @@
+# Personal / machine-specific Claude Code settings
+.claude/settings.local.json
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor swap files
+*.swp
+*~
+
+# Secrets — never commit these (the OpenAI key lives in sessionStorage,
+# never on disk, but just in case)
+.env
+.env.local
+*.key
