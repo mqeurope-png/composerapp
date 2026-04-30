@@ -125,6 +125,12 @@ function Inspector({ block, onUpdate, onClose, onDelete, onDuplicate, lang, setL
         {block.type === 'cta' && (
           <CtaBlockEditor block={block} onUpdate={onUpdate} />
         )}
+
+        {/* Slider universal: ancho del bloque (aplica a todos los tipos
+            excepto secciones, que ya gestionan su layout). */}
+        {block.type !== 'section' && (
+          <BlockWidthControl block={block} onUpdate={onUpdate} />
+        )}
       </div>
 
       <div className="inspector-footer">
@@ -769,19 +775,32 @@ function ProductTrioEditor({ block, onUpdate, lang }) {
 /* ─── PimPam Hero Editor ─── */
 
 function PimpamHeroEditor({ block, onUpdate, lang }) {
+  // CRÍTICO: usa window.STANDALONE_BLOCKS (live data) en vez de la
+  // constante module-level (que es frozen del defaults inicial). Si el
+  // user creó/editó un standalone desde BO, solo window.STANDALONE_BLOCKS
+  // refleja el cambio.
   const sbConf = (() => {
-    if (block._sourceId) {
-      const sb = (typeof STANDALONE_BLOCKS !== 'undefined' ? STANDALONE_BLOCKS : []).find(s => s.id === block._sourceId);
-      return (sb && sb.config) || {};
-    }
-    if (block.standaloneId) {
-      const sb = (typeof STANDALONE_BLOCKS !== 'undefined' ? STANDALONE_BLOCKS : []).find(s => s.id === block.standaloneId);
-      return (sb && sb.config) || {};
-    }
-    return {};
+    const live = (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || (typeof STANDALONE_BLOCKS !== 'undefined' ? STANDALONE_BLOCKS : []);
+    const id = block._sourceId || block.standaloneId;
+    if (!id) return {};
+    const sb = live.find(s => s.id === id);
+    return (sb && sb.config) || {};
   })();
-  const val = (key) => block[key] || sbConf[key] || '';
-  const valArr = (key) => (block[key] && block[key].length) ? block[key] : (sbConf[key] || []);
+  // Cuando el bloque hereda de un standalone, también puede tener i18n por
+  // idioma — getHeroDataInLanguage lo gestiona al renderizar; aquí
+  // replicamos el fallback en cadena: block → sbConf.i18n[lang] → sbConf.
+  const sbI18n = (sbConf.i18n && lang && sbConf.i18n[lang]) || {};
+  const val = (key) => {
+    const v = block[key];
+    if (v !== undefined && v !== null && v !== '') return v;
+    if (sbI18n[key] !== undefined && sbI18n[key] !== null && sbI18n[key] !== '') return sbI18n[key];
+    return sbConf[key] || '';
+  };
+  const valArr = (key) => {
+    if (Array.isArray(block[key]) && block[key].length) return block[key];
+    if (Array.isArray(sbI18n[key]) && sbI18n[key].length) return sbI18n[key];
+    return Array.isArray(sbConf[key]) ? sbConf[key] : [];
+  };
   const set = (key, v) => onUpdate(block.id, {...block, [key]: v});
 
   const bullets = valArr('heroBullets');
@@ -997,8 +1016,11 @@ function FreebirdEditor({ block, onUpdate }) {
         <Field label="URL de YouTube">
           <input className="input mono" style={{fontSize:11}} value={ytUrl} onChange={e => set('youtubeUrl', e.target.value)} />
         </Field>
-        <Field label="Miniatura personalizada (URL)">
-          <input className="input mono" style={{fontSize:11}} placeholder="Dejar vacío para auto-generar" value={thumbOvr} onChange={e => set('thumbnailOverride', e.target.value)} />
+        <Field label="Miniatura personalizada">
+          {(typeof window !== 'undefined' && typeof window.ImageUploadInput === 'function')
+            ? <window.ImageUploadInput value={thumbOvr} onChange={v => set('thumbnailOverride', v)} prefix={'video-thumbs/' + (block.id || 'new')} placeholder="Dejar vacío para auto-generar desde YouTube" />
+            : <input className="input mono" style={{fontSize:11}} placeholder="Dejar vacío para auto-generar" value={thumbOvr} onChange={e => set('thumbnailOverride', e.target.value)} />
+          }
         </Field>
         {(thumbOvr || autoThumb) && (
           <div style={{marginTop:8, borderRadius:'var(--r-sm)', overflow:'hidden', background:'#0f172a'}}>
@@ -1076,7 +1098,10 @@ function ComposedEditor({ block, onUpdate, lang, onOpenBackoffice }) {
 /* Image block editor — URL field with library button + upload, plus alt,
    link wrapper, and alignment. */
 function ImageBlockEditor({ block, onUpdate, appState }) {
-  const set = (k, v) => onUpdate({ ...block, [k]: v });
+  // updateBlock en App tiene firma (id, newBlock) — la del Inspector
+  // sigue ese contrato. Si llamas onUpdate({...}) sin id se pierde el
+  // patch. Bug Apr 2026.
+  const set = (k, v) => onUpdate(block.id, { ...block, [k]: v });
   const [showLib, setShowLib] = React.useState(false);
   const Lib = (typeof window !== 'undefined' && window.ImageLibraryModal) || null;
   const Upload = (typeof window !== 'undefined' && window.ImageUploadInput) || null;
@@ -1123,7 +1148,8 @@ function ImageBlockEditor({ block, onUpdate, appState }) {
    optional panel background. Bullets are stored as an array; the editor
    renders one input per bullet plus an "add" / trash row. */
 function CtaBlockEditor({ block, onUpdate }) {
-  const set = (k, v) => onUpdate({ ...block, [k]: v });
+  // updateBlock en App tiene firma (id, newBlock) — sin id no actualiza.
+  const set = (k, v) => onUpdate(block.id, { ...block, [k]: v });
   const bullets = Array.isArray(block.bullets) ? block.bullets : [];
   const setBullet = (i, v) => set('bullets', bullets.map((x, idx) => idx === i ? v : x));
   const addBullet = () => set('bullets', [...bullets, '']);
@@ -1200,4 +1226,32 @@ function CtaBlockEditor({ block, onUpdate }) {
   );
 }
 
-Object.assign(window, { Inspector, AiTextPopover, ImageBlockEditor, CtaBlockEditor });
+/* Control de ancho del bloque, universal para casi todos los tipos. El
+   email-gen wrappea el bloque en una tabla más estrecha cuando el ancho
+   es < 100. Aplica a todos los blocks excepto secciones (que tienen su
+   propio sistema de columnas). */
+function BlockWidthControl({ block, onUpdate }) {
+  const cur = (typeof block.widthPct === 'number' && block.widthPct >= 30 && block.widthPct <= 100) ? block.widthPct : 100;
+  const set = (v) => onUpdate(block.id, { ...block, widthPct: v });
+  return (
+    <Section title="Ancho del bloque">
+      <Field label={'Ancho: ' + cur + '%'} hint="Centra el bloque en el email a un ancho menor (útil para CTAs, imágenes destacadas, etc).">
+        <input type="range" min={30} max={100} step={5} value={cur}
+          onChange={e => set(parseInt(e.target.value, 10))}
+          style={{width:'100%'}}/>
+        <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap'}}>
+          {[50, 70, 80, 100].map(p => (
+            <button key={p}
+              className={'btn ' + (cur === p ? 'btn-primary' : 'btn-ghost')}
+              style={{fontSize:11, padding:'4px 10px'}}
+              onClick={() => set(p)}>
+              {p}%
+            </button>
+          ))}
+        </div>
+      </Field>
+    </Section>
+  );
+}
+
+Object.assign(window, { Inspector, AiTextPopover, ImageBlockEditor, CtaBlockEditor, BlockWidthControl });

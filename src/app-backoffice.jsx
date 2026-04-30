@@ -1260,35 +1260,250 @@ function CtaSavedBOEdit({ data, setData }) {
 
 function StandaloneBOEdit({ data, setData }) {
   const set = (k, v) => setData({...data, [k]: v});
+  // Helpers para tocar el config (campos específicos del tipo de bloque)
+  const cfg = data.config || {};
+  const setCfg = (k, v) => setData({...data, config: { ...cfg, [k]: v }});
+  // Tipo de bloque (campo .blockType o .type — ambos se usan en defaults)
+  const blockType = data.blockType || data.type || '';
+  const isHero = blockType === 'pimpam_hero' || blockType === 'product_hero' || blockType === 'hero';
+  const isVideo = blockType === 'video' || blockType === 'freebird';
+  const isBrandStrip = blockType === 'brand_strip';
+  const isProduct = blockType === 'product_single' || blockType === 'product_pair' || blockType === 'product_trio';
+  const isSteps = blockType === 'pimpam_steps';
+
+  const products = (typeof window !== 'undefined' && window.PRODUCTS) || PRODUCTS || [];
+
+  // Editor de bullets (heros)
+  const bullets = Array.isArray(cfg.heroBullets) ? cfg.heroBullets : [];
+  const setBullet = (i, v) => setCfg('heroBullets', bullets.map((x, idx) => idx === i ? v : x));
+  const addBullet = () => setCfg('heroBullets', [...bullets, '']);
+  const delBullet = (i) => setCfg('heroBullets', bullets.filter((_, idx) => idx !== i));
+
+  // Editor de CTA buttons (heros)
+  const ctaButtons = Array.isArray(cfg.heroCtaButtons) ? cfg.heroCtaButtons : [];
+  const setCtaBtn = (i, k, v) => setCfg('heroCtaButtons', ctaButtons.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+  const addCtaBtn = () => setCfg('heroCtaButtons', [...ctaButtons, { text: 'Más info', url: '', bg: '#1d4ed8', color: '#ffffff' }]);
+  const delCtaBtn = (i) => setCfg('heroCtaButtons', ctaButtons.filter((_, idx) => idx !== i));
+
+  // Editor de pasos (pimpam_steps)
+  const steps = Array.isArray(cfg.steps) ? cfg.steps : [];
+  const setStep = (i, k, v) => setCfg('steps', steps.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+  const addStep = () => setCfg('steps', [...steps, { n: String(steps.length + 1), t: '', s: '' }]);
+  const delStep = (i) => setCfg('steps', steps.filter((_, idx) => idx !== i));
+
+  const Upload = (typeof window !== 'undefined' && window.ImageUploadInput) || null;
+
   return (
     <>
       <div className="field">
-        <label className="field-label">Título</label>
-        <input className="input" value={data.title} onChange={e => set('title', e.target.value)} />
+        <label className="field-label">Título (interno)</label>
+        <input className="input" value={data.title || ''} onChange={e => set('title', e.target.value)} />
+      </div>
+      <div className="field">
+        <label className="field-label">Descripción (interna)</label>
+        <input className="input" value={data.desc || ''} onChange={e => set('desc', e.target.value)} placeholder="Descripción que se ve en el sidebar" />
       </div>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
         <div className="field">
           <label className="field-label">Sección</label>
-          <select className="select" value={data.section} onChange={e => set('section', e.target.value)}>
+          <select className="select" value={data.section || 'otros'} onChange={e => set('section', e.target.value)}>
             {['heroes','marcas','cabeceras','otros'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div className="field">
-          <label className="field-label">Tipo</label>
-          <input className="input mono" style={{fontSize:11}} value={data.type} onChange={e => set('type', e.target.value)} />
+          <label className="field-label">Tipo de bloque</label>
+          <select className="select" value={blockType} onChange={e => { set('blockType', e.target.value); set('type', e.target.value); }}>
+            <option value="">— Ninguno —</option>
+            <option value="pimpam_hero">Hero</option>
+            <option value="video">Vídeo</option>
+            <option value="brand_strip">Brand strip</option>
+            <option value="product_single">1 Producto</option>
+            <option value="product_pair">2 Productos</option>
+            <option value="product_trio">3 Productos</option>
+            <option value="pimpam_steps">Pasos</option>
+          </select>
         </div>
       </div>
       <div className="field">
         <label className="field-label">Marca asociada</label>
-        <select className="select" value={data.brand} onChange={e => set('brand', e.target.value)}>
+        <select className="select" value={data.brand || 'mix'} onChange={e => set('brand', e.target.value)}>
           <option value="mix">Multi-marca</option>
           {BRANDS.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
         </select>
       </div>
-      <div className="field">
-        <label className="field-label">Contenido HTML (plantilla)</label>
-        <textarea className="textarea mono" style={{fontSize:11}} rows={8} placeholder={'<div class="hero">...</div>'} />
-      </div>
+
+      {/* ─── HERO ───────────────────────────────────────── */}
+      {isHero && (
+        <>
+          <hr style={{border:'none', borderTop:'1px solid var(--border)', margin:'18px 0 10px'}}/>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>Contenido del hero</div>
+          <div className="field">
+            <label className="field-label">Título</label>
+            <input className="input" value={cfg.heroTitle || ''} onChange={e => setCfg('heroTitle', e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label">Subtítulo</label>
+            <textarea className="textarea" rows={2} value={cfg.heroSubtitle || ''} onChange={e => setCfg('heroSubtitle', e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label">Imagen</label>
+            {Upload
+              ? <Upload value={cfg.heroImage || ''} onChange={v => setCfg('heroImage', v)} prefix={'standalone-hero/' + (data.id || 'new')} placeholder="https://… o pulsa Subir" />
+              : <input className="input mono" style={{fontSize:11}} value={cfg.heroImage || ''} onChange={e => setCfg('heroImage', e.target.value)} />
+            }
+          </div>
+          <div className="field">
+            <label className="field-label">Enlace al pulsar la imagen (opcional)</label>
+            <input className="input mono" style={{fontSize:11}} value={cfg.heroImageLink || ''} onChange={e => setCfg('heroImageLink', e.target.value)} placeholder="https://…" />
+          </div>
+          <div className="field">
+            <div className="field-label-row">
+              <label className="field-label">Bullets ({bullets.length})</label>
+              <button className="btn btn-ghost" style={{fontSize:11}} onClick={addBullet}><Icon name="plus" size={11}/> Añadir bullet</button>
+            </div>
+            <div style={{display:'flex', flexDirection:'column', gap:4}}>
+              {bullets.map((b, i) => (
+                <div key={i} style={{display:'flex', gap:4, alignItems:'center'}}>
+                  <span style={{fontSize:11, color:'var(--text-subtle)', width:16, textAlign:'center'}}>✓</span>
+                  <input className="input" style={{flex:1, fontSize:12}} value={b} onChange={e => setBullet(i, e.target.value)} />
+                  <button className="icon-btn" style={{width:20, height:20}} onClick={() => delBullet(i)}><Icon name="x" size={10}/></button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <div className="field-label-row">
+              <label className="field-label">Botones CTA ({ctaButtons.length})</label>
+              <button className="btn btn-ghost" style={{fontSize:11}} onClick={addCtaBtn}><Icon name="plus" size={11}/> Añadir botón</button>
+            </div>
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              {ctaButtons.map((c, i) => (
+                <div key={i} style={{padding:8, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', background:'var(--bg-sunken)'}}>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                    <input className="input" style={{fontSize:12}} placeholder="Texto del botón" value={c.text || ''} onChange={e => setCtaBtn(i, 'text', e.target.value)} />
+                    <input className="input mono" style={{fontSize:11}} placeholder="https://…" value={c.url || ''} onChange={e => setCtaBtn(i, 'url', e.target.value)} />
+                  </div>
+                  <div style={{display:'flex', gap:6, marginTop:6, alignItems:'center'}}>
+                    <span style={{fontSize:11, color:'var(--text-muted)'}}>Fondo</span>
+                    <input type="color" value={c.bg || '#1d4ed8'} style={{width:28, height:22, border:'none', padding:0, cursor:'pointer'}} onChange={e => setCtaBtn(i, 'bg', e.target.value)} />
+                    <span style={{fontSize:11, color:'var(--text-muted)'}}>Texto</span>
+                    <input type="color" value={c.color || '#ffffff'} style={{width:28, height:22, border:'none', padding:0, cursor:'pointer'}} onChange={e => setCtaBtn(i, 'color', e.target.value)} />
+                    <button className="icon-btn" style={{marginLeft:'auto', width:22, height:22}} onClick={() => delCtaBtn(i)}><Icon name="trash" size={11}/></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label className="field-label">Color de fondo del hero</label>
+            <input type="color" value={cfg.heroBgColor || '#ffffff'} style={{width:50, height:30, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} onChange={e => setCfg('heroBgColor', e.target.value)} />
+            <span style={{marginLeft:8, fontSize:11, fontFamily:'var(--font-mono)', color:'var(--text-muted)'}}>{cfg.heroBgColor || '#ffffff'}</span>
+          </div>
+        </>
+      )}
+
+      {/* ─── VIDEO ──────────────────────────────────────── */}
+      {isVideo && (
+        <>
+          <hr style={{border:'none', borderTop:'1px solid var(--border)', margin:'18px 0 10px'}}/>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>Vídeo</div>
+          <div className="field">
+            <label className="field-label">URL de YouTube</label>
+            <input className="input mono" style={{fontSize:11}} value={cfg.youtubeUrl || ''} onChange={e => setCfg('youtubeUrl', e.target.value)} placeholder="https://www.youtube.com/watch?v=..." />
+          </div>
+          <div className="field">
+            <label className="field-label">Miniatura personalizada</label>
+            {Upload
+              ? <Upload value={cfg.thumbnailOverride || ''} onChange={v => setCfg('thumbnailOverride', v)} prefix={'video-thumbs/' + (data.id || 'new')} placeholder="Dejar vacío para auto-generar desde YouTube" />
+              : <input className="input mono" style={{fontSize:11}} value={cfg.thumbnailOverride || ''} onChange={e => setCfg('thumbnailOverride', e.target.value)} />
+            }
+          </div>
+        </>
+      )}
+
+      {/* ─── BRAND STRIP ────────────────────────────────── */}
+      {isBrandStrip && (
+        <>
+          <hr style={{border:'none', borderTop:'1px solid var(--border)', margin:'18px 0 10px'}}/>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>Brand strip</div>
+          <div className="field">
+            <label className="field-label">Marca a mostrar</label>
+            <select className="select" value={cfg.brand || 'artisjet'} onChange={e => setCfg('brand', e.target.value)}>
+              {BRANDS.filter(b => b.id !== 'bomedia').map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+            </select>
+            <div style={{fontSize:11, color:'var(--text-muted)', marginTop:6}}>El logo, color y URL se toman de la marca seleccionada (editable en BO → Marcas).</div>
+          </div>
+        </>
+      )}
+
+      {/* ─── PRODUCT (single/pair/trio) ─────────────────── */}
+      {isProduct && (
+        <>
+          <hr style={{border:'none', borderTop:'1px solid var(--border)', margin:'18px 0 10px'}}/>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>Productos por defecto</div>
+          <div className="field">
+            <label className="field-label">Producto 1</label>
+            <select className="select" value={cfg.defaultProduct || cfg.defaultProduct1 || ''} onChange={e => setCfg(blockType === 'product_single' ? 'defaultProduct' : 'defaultProduct1', e.target.value)}>
+              <option value="">— Sin defecto —</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.brand})</option>)}
+            </select>
+          </div>
+          {(blockType === 'product_pair' || blockType === 'product_trio') && (
+            <div className="field">
+              <label className="field-label">Producto 2</label>
+              <select className="select" value={cfg.defaultProduct2 || ''} onChange={e => setCfg('defaultProduct2', e.target.value)}>
+                <option value="">— Sin defecto —</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.brand})</option>)}
+              </select>
+            </div>
+          )}
+          {blockType === 'product_trio' && (
+            <div className="field">
+              <label className="field-label">Producto 3</label>
+              <select className="select" value={cfg.defaultProduct3 || ''} onChange={e => setCfg('defaultProduct3', e.target.value)}>
+                <option value="">— Sin defecto —</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.brand})</option>)}
+              </select>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ─── STEPS ──────────────────────────────────────── */}
+      {isSteps && (
+        <>
+          <hr style={{border:'none', borderTop:'1px solid var(--border)', margin:'18px 0 10px'}}/>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>Pasos</div>
+          <div className="field">
+            <div className="field-label-row">
+              <label className="field-label">Pasos ({steps.length})</label>
+              <button className="btn btn-ghost" style={{fontSize:11}} onClick={addStep}><Icon name="plus" size={11}/> Añadir paso</button>
+            </div>
+            {steps.map((st, i) => (
+              <div key={i} style={{padding:8, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', marginBottom:6}}>
+                <div style={{display:'grid', gridTemplateColumns:'80px 1fr', gap:6, marginBottom:4}}>
+                  <input className="input" style={{fontSize:12}} placeholder="🔢" value={st.n || ''} onChange={e => setStep(i, 'n', e.target.value)} />
+                  <input className="input" style={{fontSize:12}} placeholder="Título" value={st.t || ''} onChange={e => setStep(i, 't', e.target.value)} />
+                </div>
+                <div style={{display:'flex', gap:6}}>
+                  <input className="input" style={{flex:1, fontSize:12}} placeholder="Subtítulo" value={st.s || ''} onChange={e => setStep(i, 's', e.target.value)} />
+                  <button className="icon-btn" style={{width:22, height:22}} onClick={() => delStep(i)}><Icon name="trash" size={11}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+            <div className="field">
+              <label className="field-label">Color fondo</label>
+              <input type="color" value={cfg.stepsBgColor || '#fff7ed'} style={{width:50, height:30, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} onChange={e => setCfg('stepsBgColor', e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">Color borde</label>
+              <input type="color" value={cfg.stepsBorderColor || '#fed7aa'} style={{width:50, height:30, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} onChange={e => setCfg('stepsBorderColor', e.target.value)} />
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

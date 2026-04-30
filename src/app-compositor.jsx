@@ -1854,7 +1854,13 @@ function SaveAsTemplateModal({ onClose, onSave, blocksCount }) {
    so the user can see the design at native widths without the panel constraint. */
 function EmailPreviewModal({ html, lang, onClose }) {
   const [device, setDevice] = React.useState('desktop');
+  const [toast, setToast] = React.useState('');
   const iframeRef = React.useRef(null);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2400);
+  };
 
   React.useEffect(() => {
     const f = iframeRef.current;
@@ -1873,8 +1879,12 @@ function EmailPreviewModal({ html, lang, onClose }) {
   }, [onClose]);
 
   const handleCopy = async () => {
-    if (typeof copyHtmlAsRich === 'function') await copyHtmlAsRich(html || '');
-    else { try { await navigator.clipboard.writeText(html || ''); } catch (e) {} }
+    const r = (typeof copyHtmlAsRich === 'function')
+      ? await copyHtmlAsRich(html || '')
+      : (await (async () => { try { await navigator.clipboard.writeText(html || ''); return { ok:true, mode:'plain' }; } catch (e) { return { ok:false }; } })());
+    if (r && r.ok && r.mode === 'rich') showToast('HTML copiado · pégalo en Gmail/Outlook y verás el email renderizado');
+    else if (r && r.ok) showToast('HTML copiado (texto plano)');
+    else showToast('No se pudo copiar (revisa permisos del navegador)');
   };
   const handleDownload = () => {
     const blob = new Blob([html || ''], { type: 'text/html' });
@@ -1884,6 +1894,7 @@ function EmailPreviewModal({ html, lang, onClose }) {
     a.download = 'bomedia-email-' + new Date().toISOString().slice(0, 10) + '.html';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('HTML descargado');
   };
   const handleOpenTab = () => {
     const w = window.open('about:blank', '_blank');
@@ -1939,6 +1950,19 @@ function EmailPreviewModal({ html, lang, onClose }) {
               margin: '0 auto',
             }}
           />
+          {toast && (
+            <div style={{
+              position:'absolute', bottom:24, left:'50%', transform:'translateX(-50%)',
+              background:'var(--bg-inverse)', color:'var(--bg)',
+              padding:'10px 18px', borderRadius:'var(--r-md)',
+              fontSize:13, fontWeight:500,
+              boxShadow:'0 12px 30px rgba(0,0,0,0.25)',
+              zIndex:10, maxWidth:'90%',
+              animation:'fadeInUp 0.2s ease-out',
+            }}>
+              {toast}
+            </div>
+          )}
         </div>
       </div>
     </div>

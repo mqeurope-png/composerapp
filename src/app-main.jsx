@@ -67,6 +67,10 @@ function App() {
   const [loginValue, setLoginValue] = React.useState('');
   const [loginUserId, setLoginUserId] = React.useState('admin');
   const [loginError, setLoginError] = React.useState(false);
+  // Pantalla de bienvenida que se muestra antes del modal de login. El user
+  // pulsa "Entrar" → showLanding=false → aparece el modal. Tras un logout
+  // se vuelve a mostrar el landing.
+  const [showLanding, setShowLanding] = React.useState(true);
   const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'cloud' | 'local' | ''
 
   // ─── appState (real data) — start from localStorage+defaults, then hydrate from Supabase ───
@@ -911,6 +915,7 @@ function App() {
     setMode('compositor');
     setLoginValue('');
     setLoginError(false);
+    setShowLanding(true); // Volver a la portada al cerrar sesión
   };
 
   // Helpers for the visibility model.
@@ -966,7 +971,11 @@ function App() {
     <div className="app-shell" style={{ '--right-panel-w': rightPanelWidth + 'px' }}>
       <header className="topbar">
         <div className="topbar-brand">
-          <div className="topbar-logo">b</div>
+          {BOMEDIA_LOGO_URL ? (
+            <img src={BOMEDIA_LOGO_URL} alt="Bomedia" className="topbar-logo" style={{objectFit:'cover'}}/>
+          ) : (
+            <div className="topbar-logo" style={{background:'linear-gradient(135deg, #8b5cf6 0%, #ec4899 60%, #3b82f6 100%)', color:'#fff'}}>B</div>
+          )}
           <div>
             <div className="topbar-title">bomedia<span className="topbar-title-sub">email composer</span></div>
           </div>
@@ -1179,7 +1188,7 @@ function App() {
         <span className="dot" />
         <span>{(appState.products || []).length} productos · {(appState.templates || []).length} plantillas</span>
         <div style={{marginLeft:'auto', display:'flex', gap:16, alignItems:'center'}}>
-          <span>v4.0 · AI agent</span>
+          <span>v4.5 · By Edu & Claude Code</span>
           <span className="dot" />
           <span>⌘K para comandos</span>
         </div>
@@ -1208,11 +1217,19 @@ function App() {
         />
       )}
 
-      {!currentUser && syncStatus !== 'loading' && (
+      {!currentUser && syncStatus !== 'loading' && showLanding && (
+        <LandingScreen onEnter={() => setShowLanding(false)} />
+      )}
+
+      {!currentUser && syncStatus !== 'loading' && !showLanding && (
         <div className="modal-overlay login-overlay" onClick={e => e.stopPropagation()}>
           <div className="modal login-modal" onClick={e => e.stopPropagation()}>
             <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
-              <div className="topbar-logo" style={{width:32, height:32}}>b</div>
+              {BOMEDIA_LOGO_URL ? (
+                <img src={BOMEDIA_LOGO_URL} alt="Bomedia" className="topbar-logo" style={{width:32, height:32, objectFit:'cover'}}/>
+              ) : (
+                <div className="topbar-logo" style={{width:32, height:32, background:'linear-gradient(135deg, #8b5cf6 0%, #ec4899 60%, #3b82f6 100%)', color:'#fff'}}>B</div>
+              )}
               <div>
                 <h2 style={{fontSize:16, margin:0}}>bomedia <span className="serif" style={{color:'var(--text-muted)'}}>email composer</span></h2>
                 <div style={{fontSize:11, color:'var(--text-muted)', marginTop:2}}>Selecciona usuario y contraseña para continuar.</div>
@@ -1244,9 +1261,12 @@ function App() {
               />
               {loginError && <div style={{fontSize:12, color:'var(--danger)', marginTop:6}}>Usuario o contraseña incorrectos</div>}
             </div>
-            <div className="modal-actions">
+            <div className="modal-actions" style={{display:'flex', flexDirection:'column', gap:6}}>
               <button className="btn btn-primary" onClick={submitLogin} style={{width:'100%', justifyContent:'center'}}>
                 <Icon name="zap" size={13}/> Entrar
+              </button>
+              <button className="btn btn-ghost" onClick={() => setShowLanding(true)} style={{width:'100%', justifyContent:'center', fontSize:12}}>
+                ← Volver a la portada
               </button>
             </div>
           </div>
@@ -1260,6 +1280,96 @@ function App() {
           onClose={() => setTweaksOpen(false)}
         />
       ) : null}
+    </div>
+  );
+}
+
+/* URLs del branding de Bomedia (subidas a boprint.net WP Media). El logo
+   se usa en topbar + login modal; el banner se usa como hero del landing.
+   Si están vacíos, se renderizan fallbacks CSS-gradient. */
+const BOMEDIA_LOGO_URL = 'https://boprint.net/wp-content/uploads/2026/04/logo-app.jpg';
+const BOMEDIA_BANNER_URL = 'https://boprint.net/wp-content/uploads/2026/04/banner-app.jpg';
+
+/* Pantalla de bienvenida. Se muestra antes del login. El user pulsa
+   "Entrar" → se cierra y aparece el modal de credenciales. */
+function LandingScreen({ onEnter }) {
+  const [hover, setHover] = React.useState(false);
+  return (
+    <div style={{
+      position:'fixed', inset:0, zIndex:1000,
+      display:'flex', flexDirection:'column',
+      background:'linear-gradient(135deg, #f7f3ff 0%, #fef0f7 40%, #eff5ff 80%, #f7f3ff 100%)',
+      overflow:'auto',
+    }}>
+      <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'30px 20px'}}>
+        <div style={{textAlign:'center', maxWidth:1100, width:'100%'}}>
+          {BOMEDIA_BANNER_URL ? (
+            <img
+              src={BOMEDIA_BANNER_URL}
+              alt="Bomedia Email Composer"
+              style={{
+                width:'100%', maxWidth:1000, height:'auto',
+                display:'block', margin:'0 auto 32px',
+                borderRadius:18,
+                boxShadow:'0 30px 80px rgba(139,92,246,0.18), 0 8px 20px rgba(26,25,24,0.08)',
+              }}
+            />
+          ) : (
+            <>
+              {BOMEDIA_LOGO_URL ? (
+                <img src={BOMEDIA_LOGO_URL} alt="Bomedia" style={{width:140, height:140, marginBottom:32, borderRadius:32, boxShadow:'0 30px 60px rgba(139,92,246,0.25)'}}/>
+              ) : (
+                <div style={{
+                  width:140, height:140, margin:'0 auto 32px',
+                  background:'linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #3b82f6 100%)',
+                  borderRadius:32,
+                  display:'grid', placeItems:'center',
+                  fontSize:88, fontWeight:900, color:'#fff',
+                  boxShadow:'0 30px 60px rgba(139,92,246,0.35)',
+                }}>B</div>
+              )}
+              <h1 style={{
+                fontSize:'clamp(40px, 6vw, 64px)', fontWeight:800, lineHeight:1.05,
+                margin:'0 0 12px', letterSpacing:'-0.025em',
+                background:'linear-gradient(135deg, #1a1918 0%, #1a1918 35%, #8b5cf6 65%, #ec4899 100%)',
+                WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
+                backgroundClip:'text',
+              }}>
+                Bomedia<br/>Email Composer
+              </h1>
+              <p style={{fontSize:'clamp(16px, 2vw, 20px)', color:'#4a4742', margin:'24px 0 6px', fontWeight:500}}>
+                Crea emails comerciales en minutos
+              </p>
+              <p style={{fontSize:14, color:'#8a8780', margin:'0 0 44px', lineHeight:1.5, maxWidth:520, marginLeft:'auto', marginRight:'auto'}}>
+                Plantillas, productos, idiomas e IA en una sola herramienta.
+              </p>
+            </>
+          )}
+          <button
+            onClick={onEnter}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+            style={{
+              padding:'14px 44px', fontSize:16, fontWeight:600,
+              background:'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+              color:'#fff', border:'none', borderRadius:12,
+              cursor:'pointer',
+              boxShadow: hover ? '0 18px 36px rgba(139,92,246,0.45)' : '0 12px 24px rgba(139,92,246,0.3)',
+              transform: hover ? 'translateY(-1px)' : 'translateY(0)',
+              transition:'all 0.18s ease',
+              display:'inline-flex', alignItems:'center', gap:8,
+            }}
+          >
+            Entrar →
+          </button>
+          <div style={{marginTop:14, fontSize:11, color:'#a8a59c'}}>
+            Acceso restringido al equipo Bomedia
+          </div>
+        </div>
+      </div>
+      <div style={{padding:'20px 30px', textAlign:'center', fontSize:11, color:'#9c9a91', letterSpacing:'0.02em'}}>
+        Bomedia Composer V4.5 · By Edu & Claude Code
+      </div>
     </div>
   );
 }

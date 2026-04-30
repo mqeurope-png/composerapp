@@ -341,6 +341,22 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
     return block
   }
 
+  /* Wrap un grupo de <tr> en una tabla más estrecha (50-100%) centrada
+     dentro del wrap general. Outlook-friendly: usa solo tables.
+     Si widthPct >= 100 o no está, devuelve el HTML tal cual. */
+  function _wrapWithWidth(rowsHtml, widthPct) {
+    if (!widthPct || widthPct >= 100) return rowsHtml
+    const w = Math.max(30, Math.min(100, parseInt(widthPct, 10) || 100))
+    return '<tr><td style="padding:0">' +
+      '<table width="100%" cellpadding="0" cellspacing="0" border="0">' +
+      '<tr><td align="center" style="padding:0">' +
+      '<table width="' + w + '%" style="width:' + w + '%" cellpadding="0" cellspacing="0" border="0">' +
+      '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>' +
+      '</td></tr></table>' +
+      '</td></tr>'
+  }
+
   // Render one block to its <tr>...</tr> rows. Extracted so section blocks
   // can recurse into their column-children without duplicating the dispatch.
   function renderBlock(b) {
@@ -450,6 +466,12 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
         })
         break
       }
+    }
+    // Aplicar widthPct global si el bloque lo tiene (50-100). Las
+    // secciones (multi-columna) ya gestionan su propio ancho internamente
+    // y no se benefician — mejor dejarlas full width.
+    if (b.type !== 'section' && typeof b.widthPct === 'number' && b.widthPct < 100) {
+      out = _wrapWithWidth(out, b.widthPct)
     }
     return out
   }
