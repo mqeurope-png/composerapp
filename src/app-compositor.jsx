@@ -823,9 +823,20 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
     );
   }
 
+  // Estilo de ancho + alineación del bloque a nivel canvas. No aplica
+  // a inner blocks dentro de una sección (ya están limitados a su columna).
+  const _widthPct = (!isInner && typeof block.widthPct === 'number' && block.widthPct >= 30 && block.widthPct < 100) ? block.widthPct : null;
+  const _blockAlign = block.blockAlign || 'center';
+  const blockSizeStyle = _widthPct ? {
+    maxWidth: _widthPct + '%',
+    width: _widthPct + '%',
+    marginLeft: _blockAlign === 'left' ? 0 : 'auto',
+    marginRight: _blockAlign === 'right' ? 0 : 'auto',
+  } : {};
   return (
     <div
       className={'block' + (selected ? ' selected' : '') + (dropEdge ? ' drop-' + dropEdge : '')}
+      style={blockSizeStyle}
       draggable={dragArmed}
       onClick={() => onSelect(block.id)}
       onDragStart={handleDragStart}

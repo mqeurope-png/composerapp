@@ -341,16 +341,17 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
     return block
   }
 
-  /* Wrap un grupo de <tr> en una tabla más estrecha (50-100%) centrada
-     dentro del wrap general. Outlook-friendly: usa solo tables.
-     Si widthPct >= 100 o no está, devuelve el HTML tal cual. */
-  function _wrapWithWidth(rowsHtml, widthPct) {
-    if (!widthPct || widthPct >= 100) return rowsHtml
-    const w = Math.max(30, Math.min(100, parseInt(widthPct, 10) || 100))
+  /* Wrap un grupo de <tr> en una tabla más estrecha (30-100%) alineada
+     según `align` (left/center/right). Outlook-friendly: usa solo tables.
+     Si widthPct >= 100 y align es center/null, devuelve tal cual. */
+  function _wrapWithWidth(rowsHtml, widthPct, align) {
+    const w = (typeof widthPct === 'number') ? Math.max(30, Math.min(100, widthPct)) : 100
+    const a = (align === 'left' || align === 'right') ? align : 'center'
+    if (w >= 100 && a === 'center') return rowsHtml
     return '<tr><td style="padding:0">' +
       '<table width="100%" cellpadding="0" cellspacing="0" border="0">' +
-      '<tr><td align="center" style="padding:0">' +
-      '<table width="' + w + '%" style="width:' + w + '%" cellpadding="0" cellspacing="0" border="0">' +
+      '<tr><td align="' + a + '" style="padding:0">' +
+      '<table width="' + w + '%" style="width:' + w + '%" cellpadding="0" cellspacing="0" border="0" align="' + a + '">' +
       '<tbody>' + rowsHtml + '</tbody>' +
       '</table>' +
       '</td></tr></table>' +
@@ -467,11 +468,14 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
         break
       }
     }
-    // Aplicar widthPct global si el bloque lo tiene (50-100). Las
-    // secciones (multi-columna) ya gestionan su propio ancho internamente
-    // y no se benefician — mejor dejarlas full width.
-    if (b.type !== 'section' && typeof b.widthPct === 'number' && b.widthPct < 100) {
-      out = _wrapWithWidth(out, b.widthPct)
+    // Aplicar widthPct + blockAlign si el bloque los tiene. Las secciones
+    // (multi-columna) ya gestionan su propio layout y se ignoran.
+    if (b.type !== 'section') {
+      const w = (typeof b.widthPct === 'number') ? b.widthPct : 100
+      const a = b.blockAlign || 'center'
+      if (w < 100 || a !== 'center') {
+        out = _wrapWithWidth(out, w, a)
+      }
     }
     return out
   }
@@ -507,6 +511,10 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
   }
 
   for (const b of (v3Blocks || [])) {
+    // Capturamos ancho/alineación del bloque v3 para propagarlos al
+    // bloque v2 correspondiente — sin esto, el renderBlock no aplica
+    // _wrapWithWidth porque b.widthPct queda undefined tras el bridge.
+    const lengthBefore = out.length
     switch (b.type) {
       // ─── section (multi-column) — recursively transform inner blocks ──
       case 'section': {
@@ -675,6 +683,14 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
 
       default:
         break
+    }
+    // Propagar widthPct/blockAlign del v3 al/los v2 generados (un v3 block
+    // como composed puede expandir a varios v2 — todos heredan el ancho).
+    if ((typeof b.widthPct === 'number' || b.blockAlign) && out.length > lengthBefore) {
+      for (let i = lengthBefore; i < out.length; i++) {
+        if (typeof b.widthPct === 'number') out[i].widthPct = b.widthPct
+        if (b.blockAlign) out[i].blockAlign = b.blockAlign
+      }
     }
   }
   return out

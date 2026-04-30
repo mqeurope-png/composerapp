@@ -1226,29 +1226,58 @@ function CtaBlockEditor({ block, onUpdate }) {
   );
 }
 
-/* Control de ancho del bloque, universal para casi todos los tipos. El
-   email-gen wrappea el bloque en una tabla más estrecha cuando el ancho
-   es < 100. Aplica a todos los blocks excepto secciones (que tienen su
-   propio sistema de columnas). */
+/* Control de ancho + alineación del bloque, universal para casi todos
+   los tipos. El email-gen y el canvas aplican estos valores. */
 function BlockWidthControl({ block, onUpdate }) {
-  const cur = (typeof block.widthPct === 'number' && block.widthPct >= 30 && block.widthPct <= 100) ? block.widthPct : 100;
-  const set = (v) => onUpdate(block.id, { ...block, widthPct: v });
+  const curWidth = (typeof block.widthPct === 'number' && block.widthPct >= 30 && block.widthPct <= 100) ? block.widthPct : 100;
+  const curAlign = block.blockAlign || 'center';
+  const setWidth = (v) => onUpdate(block.id, { ...block, widthPct: v });
+  const setAlign = (v) => onUpdate(block.id, { ...block, blockAlign: v });
+
+  // "Aplicar a todos" — usa el flag global expuesto por App
+  const applyToAll = () => {
+    if (typeof window.__applyBlockSizeToAll !== 'function') return;
+    if (!window.confirm('¿Aplicar este ancho (' + curWidth + '%) y alineación (' + curAlign + ') a TODOS los bloques del canvas?')) return;
+    window.__applyBlockSizeToAll({ widthPct: curWidth, blockAlign: curAlign });
+  };
+
   return (
-    <Section title="Ancho del bloque">
-      <Field label={'Ancho: ' + cur + '%'} hint="Centra el bloque en el email a un ancho menor (útil para CTAs, imágenes destacadas, etc).">
-        <input type="range" min={30} max={100} step={5} value={cur}
-          onChange={e => set(parseInt(e.target.value, 10))}
+    <Section title="Ancho y alineación">
+      <Field label={'Ancho: ' + curWidth + '%'} hint="Reduce el ancho del bloque dentro del email (útil para CTAs, imágenes, párrafos destacados).">
+        <input type="range" min={30} max={100} step={5} value={curWidth}
+          onChange={e => setWidth(parseInt(e.target.value, 10))}
           style={{width:'100%'}}/>
         <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap'}}>
           {[50, 70, 80, 100].map(p => (
             <button key={p}
-              className={'btn ' + (cur === p ? 'btn-primary' : 'btn-ghost')}
+              className={'btn ' + (curWidth === p ? 'btn-primary' : 'btn-ghost')}
               style={{fontSize:11, padding:'4px 10px'}}
-              onClick={() => set(p)}>
+              onClick={() => setWidth(p)}>
               {p}%
             </button>
           ))}
         </div>
+      </Field>
+      <Field label="Alineación del bloque">
+        <div style={{display:'flex', gap:4}}>
+          {[
+            { id: 'left', label: '← Izquierda' },
+            { id: 'center', label: 'Centro' },
+            { id: 'right', label: 'Derecha →' },
+          ].map(opt => (
+            <button key={opt.id}
+              className={'btn ' + (curAlign === opt.id ? 'btn-primary' : 'btn-ghost')}
+              style={{fontSize:11, flex:1}}
+              onClick={() => setAlign(opt.id)}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="">
+        <button className="btn btn-outline" style={{fontSize:11, width:'100%'}} onClick={applyToAll}>
+          <Icon name="layers" size={11}/> Aplicar este ancho y alineación a todos los bloques
+        </button>
       </Field>
     </Section>
   );

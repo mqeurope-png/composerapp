@@ -214,6 +214,18 @@ function App() {
   // current appState so library widgets can browse uploads/products/brands
   // without prop-drilling.
   React.useEffect(() => { window.__setAppState = setAppState; }, [setAppState]);
+  // Atajo "aplicar a todos los bloques" del BlockWidthControl. Setea
+  // widthPct + blockAlign en cada bloque top-level del canvas (no entra
+  // dentro de columnas de sección — esas tienen su propio layout).
+  React.useEffect(() => {
+    window.__applyBlockSizeToAll = (patch) => {
+      if (!patch || typeof patch !== 'object') return;
+      setBlocks(prev => prev.map(b =>
+        b.type === 'section' ? b : { ...b, ...patch }
+      ));
+    };
+    return () => { delete window.__applyBlockSizeToAll; };
+  }, []);
   React.useEffect(() => { window.__appState = appState; }, [appState]);
   // Expose expandTemplate so the AI agent's load_template tool can use the
   // app's canonical template-expansion logic instead of reimplementing it.
