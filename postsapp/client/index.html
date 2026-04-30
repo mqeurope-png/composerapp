@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PostsApp</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Generador de Posts</h1>
+    <form id="post-form">
+      <label>Idioma
+        <select name="lang">
+          <option value="es">Español</option>
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="nl">Nederlands</option>
+        </select>
+      </label>
+      <label>Plataforma
+        <select name="platform">
+          <option value="instagram">Instagram</option>
+          <option value="facebook">Facebook</option>
+          <option value="linkedin">LinkedIn</option>
+        </select>
+      </label>
+      <label>Tono <input name="tone" value="profesional" /></label>
+      <label>Objetivo <input name="objective" value="generar engagement" /></label>
+      <label>Audiencia <input name="audience" value="emprendedores" /></label>
+      <label>Producto del catálogo
+        <select name="productId" id="product-id"><option value="">(texto libre)</option></select>
+      </label>
+      <label>Producto/Servicio (si no eliges catálogo) <input name="product" /></label>
+      <label>CTA <input name="cta" value="Escríbeme por DM" /></label>
+      <label>API URL <input name="apiUrl" value="http://localhost:8787" /></label>
+      <button type="submit">Generar</button>
+    </form>
+
+    <details>
+      <summary>Cargar JSON del catálogo (pegado manual)</summary>
+      <label>Pega aquí el JSON exportado de composerapp
+        <textarea id="catalog-json" rows="8" placeholder='{"products":[],"uploadedImages":[]}'></textarea>
+      </label>
+      <button type="button" id="import-catalog">Importar catálogo</button>
+      <small id="import-status"></small>
+    </details>
+    <pre id="result"></pre>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
