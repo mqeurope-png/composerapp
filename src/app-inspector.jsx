@@ -782,13 +782,17 @@ function PimpamHeroEditor({ block, onUpdate, lang }) {
   // constante module-level (que es frozen del defaults inicial). Si el
   // user creó/editó un standalone desde BO, solo window.STANDALONE_BLOCKS
   // refleja el cambio.
-  const sbConf = (() => {
+  const _sbSource = (() => {
     const live = (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || (typeof STANDALONE_BLOCKS !== 'undefined' ? STANDALONE_BLOCKS : []);
     const id = block._sourceId || block.standaloneId;
-    if (!id) return {};
-    const sb = live.find(s => s.id === id);
-    return (sb && sb.config) || {};
+    if (!id) return null;
+    return live.find(s => s.id === id) || null;
   })();
+  const sbConf = (_sbSource && _sbSource.config) || {};
+  // Marca del hero (para tagear uploads de imagen). Cadena de prioridades:
+  // block.brand (override en la instancia) → sbSource.brand (top-level del
+  // standalone) → null (el ImageUploadInput pedirá al user que elija marca).
+  const heroBrand = block.brand || (_sbSource && _sbSource.brand) || null;
   // Cuando el bloque hereda de un standalone, también puede tener i18n por
   // idioma — getHeroDataInLanguage lo gestiona al renderizar; aquí
   // replicamos el fallback en cadena: block → sbConf.i18n[lang] → sbConf.
@@ -840,7 +844,7 @@ function PimpamHeroEditor({ block, onUpdate, lang }) {
         </Field>
         <Field label="Imagen del hero">
           {(typeof window !== 'undefined' && typeof window.ImageUploadInput === 'function')
-            ? <window.ImageUploadInput value={val('heroImage')} onChange={v => set('heroImage', v)} prefix={'heroes/' + (block.id || 'new')} placeholder="https://… o pulsa Subir" />
+            ? <window.ImageUploadInput value={val('heroImage')} onChange={v => set('heroImage', v)} prefix={'heroes/' + (block.id || 'new')} placeholder="https://… o pulsa Subir" brand={heroBrand} />
             : <input className="input mono" style={{fontSize:11}} value={val('heroImage')} onChange={e => set('heroImage', e.target.value)} />
           }
         </Field>
@@ -1161,7 +1165,7 @@ function ImageBlockEditor({ block, onUpdate, appState }) {
     <Section title="Imagen">
       <Field label="URL de la imagen">
         {Upload
-          ? <Upload value={block.src || ''} onChange={v => set('src', v)} prefix={'image-block/' + (block.id || 'new')} />
+          ? <Upload value={block.src || ''} onChange={v => set('src', v)} prefix={'image-block/' + (block.id || 'new')} brand={block.brand} />
           : <input className="input mono" style={{fontSize:11}} value={block.src || ''} onChange={e => set('src', e.target.value)} placeholder="https://…" />
         }
       </Field>

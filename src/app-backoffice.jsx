@@ -645,7 +645,7 @@ function ProductBOEdit({ data, setData, lang }) {
           <div style={{aspectRatio:'1', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', padding:8, display:'grid', placeItems:'center', border:'1px solid var(--border)'}}>
             {data.img ? <img src={data.img} alt="" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.display='none'; }}/> : <Icon name="box" size={32}/>}
           </div>
-          <ImageUploadInput value={data.img || ''} onChange={v => setBase('img', v)} prefix={'products/' + (data.id || 'new')} placeholder="https://… o pulsa Subir" />
+          <ImageUploadInput value={data.img || ''} onChange={v => setBase('img', v)} prefix={'products/' + (data.id || 'new')} placeholder="https://… o pulsa Subir" brand={data.brand} />
         </div>
       </div>
 
@@ -777,7 +777,7 @@ function BrandBOEdit({ data, setData }) {
 
       <div className="field">
         <label className="field-label">Logo</label>
-        <ImageUploadInput value={data.logo || ''} onChange={v => set('logo', v)} prefix={'brands/' + (data.id || 'new')} placeholder="https://…/logo.png" />
+        <ImageUploadInput value={data.logo || ''} onChange={v => set('logo', v)} prefix={'brands/' + (data.id || 'new')} placeholder="https://…/logo.png" brand={data.id} />
       </div>
 
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
@@ -1519,7 +1519,13 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
 
       {block.type === 'image' && (
         <div style={{display:'flex', flexDirection:'column', gap:6}}>
-          <input className="input" value={block.src || ''} placeholder="https://… (URL de la imagen)" onChange={e => onUpdate({ src: e.target.value })} style={{fontSize:11, fontFamily:'var(--font-mono)'}} />
+          <ImageUploadInput
+            value={block.src || ''}
+            onChange={v => onUpdate({ src: v })}
+            prefix="composed-image"
+            placeholder="https://… (URL de la imagen)"
+            brand={block.brand}
+          />
           <input className="input" value={block.alt || ''} placeholder="Alt (descripción accesible)" onChange={e => onUpdate({ alt: e.target.value })} style={{fontSize:11}} />
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
             <select className="select" value={block.align || 'center'} onChange={e => onUpdate({ align: e.target.value })}>
@@ -2617,39 +2623,69 @@ function AutoTranslatePanel({ appState, setAppState }) {
    "Subir" button that opens the file picker, uploads to Supabase Storage,
    and writes the resulting public URL back through onChange. Renders a 60px
    thumbnail when there's a value so the user sees what's loaded. */
-function ImageUploadInput({ value, onChange, placeholder, prefix }) {
+function ImageUploadInput({ value, onChange, placeholder, prefix, brand: presetBrand }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [libOpen, setLibOpen] = React.useState(false);
+  // Pending file waiting for the user to pick a brand. Cuando el caller no
+  // pasa `brand` como prop (contextos sin marca implícita — bloque imagen
+  // suelto en composer/compuesto, biblioteca admin), pedimos la marca antes
+  // de subir. Si el caller sí pasa brand (editor de producto, marca, hero
+  // ya vinculado a una marca), saltamos este paso.
+  const [pendingFile, setPendingFile] = React.useState(null);
+  const [pickedBrand, setPickedBrand] = React.useState(presetBrand || '');
   const fileRef = React.useRef(null);
   const onPick = () => fileRef.current && fileRef.current.click();
   const appState = (typeof window !== 'undefined' && window.__appState) || {};
   const setAppState = (typeof window !== 'undefined' && window.__setAppState) || (() => {});
   const Lib = (typeof window !== 'undefined' && window.ImageLibraryModal) || null;
-  const onFile = (e) => {
-    const f = e.target.files && e.target.files[0];
-    e.target.value = '';
-    if (!f) return;
+  const allBrands = ((typeof window !== 'undefined' && window.BRANDS) || (typeof BRANDS !== 'undefined' ? BRANDS : []) || [])
+    .filter(b => b.id !== 'bomedia');
+
+  const doUpload = (file, brandTag) => {
     const upload = (typeof window !== 'undefined' && typeof window.uploadImage === 'function') ? window.uploadImage : null;
     if (!upload) {
       setErr('Subida no disponible (módulo de uploads no cargado)');
       return;
     }
     setBusy(true); setErr('');
-    upload(f, { prefix })
+    upload(file, { prefix })
       .then(url => {
         onChange(url);
-        // Track in the global library so it shows up next time the user
-        // picks an image (deduped by url).
         try {
           if (typeof window.recordUploadedImage === 'function') {
-            window.recordUploadedImage({ url, name: f.name || '', size: f.size, addedAt: Date.now() });
+            window.recordUploadedImage({
+              url,
+              name: file.name || '',
+              size: file.size,
+              addedAt: Date.now(),
+              brand: brandTag || null,
+            });
           }
         } catch (e) {}
       })
       .catch(e2 => setErr(e2.message || String(e2)))
-      .finally(() => setBusy(false));
+      .finally(() => { setBusy(false); setPendingFile(null); });
   };
+
+  const onFile = (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    if (presetBrand) {
+      // El caller ha fijado la marca — subir directamente con esa marca.
+      doUpload(f, presetBrand);
+      return;
+    }
+    // Pedir marca antes de subir.
+    setPendingFile(f);
+  };
+  const confirmUpload = () => {
+    if (!pendingFile) return;
+    doUpload(pendingFile, pickedBrand || null);
+  };
+  const cancelUpload = () => { setPendingFile(null); };
+
   const showThumb = value && /^(https?:|data:)/i.test(value);
   return (
     <div style={{display:'flex', flexDirection:'column', gap:6}}>
@@ -2665,6 +2701,21 @@ function ImageUploadInput({ value, onChange, placeholder, prefix }) {
         </button>
         <input type="file" accept="image/*" ref={fileRef} onChange={onFile} style={{display:'none'}} />
       </div>
+      {pendingFile && (
+        <div style={{padding:8, border:'1px solid var(--accent)', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', display:'flex', flexDirection:'column', gap:6}}>
+          <div style={{fontSize:11, color:'var(--text-muted)'}}>
+            <strong>"{pendingFile.name}"</strong> · selecciona la marca antes de subir:
+          </div>
+          <div style={{display:'flex', gap:6}}>
+            <select className="select" style={{flex:1, fontSize:11}} value={pickedBrand} onChange={e => setPickedBrand(e.target.value)}>
+              <option value="">— Sin marca específica —</option>
+              {allBrands.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+            </select>
+            <button type="button" className="btn btn-primary" style={{fontSize:11, padding:'6px 10px'}} onClick={confirmUpload}>Subir</button>
+            <button type="button" className="btn btn-ghost" style={{fontSize:11, padding:'6px 10px'}} onClick={cancelUpload}>Cancelar</button>
+          </div>
+        </div>
+      )}
       {showThumb && (
         <img src={value} alt="" style={{width:64, height:64, objectFit:'contain', borderRadius:4, border:'1px solid var(--border)', background:'var(--bg-sunken)', padding:4}} onError={e => { e.target.style.display='none'; }} />
       )}
@@ -2682,8 +2733,8 @@ function ImageUploadInput({ value, onChange, placeholder, prefix }) {
    borrar (de la biblioteca, no del WP origen) y subir nuevas. */
 function ImageLibraryAdminPanel({ appState, setAppState }) {
   const [filter, setFilter] = React.useState('upload');
+  const [brandFilter, setBrandFilter] = React.useState('all');
   const [search, setSearch] = React.useState('');
-  const [pendingPaste, setPendingPaste] = React.useState('');
 
   const items = React.useMemo(() => _collectKnownImages(appState || {}), [appState]);
   const groups = [
@@ -2693,14 +2744,24 @@ function ImageLibraryAdminPanel({ appState, setAppState }) {
     { id: 'brand', label: 'Marcas', count: items.filter(i => i.source === 'brand').length },
     { id: 'hero', label: 'Heroes', count: items.filter(i => i.source === 'hero').length },
   ];
+  const allBrands = ((typeof window !== 'undefined' && window.BRANDS) || (appState && appState.brands) || []).filter(b => b.id !== 'bomedia');
+  // Recuento por marca (sobre el filtro de fuente activo) para mostrar
+  // chips con el número exacto de items por marca.
+  const itemsAfterSource = filter === 'all' ? items : items.filter(i => i.source === filter);
+  const brandCounts = (() => {
+    const counts = { all: itemsAfterSource.length, none: 0 };
+    for (const it of itemsAfterSource) {
+      if (!it.brand) counts.none++;
+      else counts[it.brand] = (counts[it.brand] || 0) + 1;
+    }
+    return counts;
+  })();
   const filtered = items.filter(it =>
     (filter === 'all' || it.source === filter) &&
+    (brandFilter === 'all' || (brandFilter === 'none' ? !it.brand : it.brand === brandFilter)) &&
     (!search || (it.label || '').toLowerCase().includes(search.toLowerCase()) || (it.url || '').toLowerCase().includes(search.toLowerCase()))
   );
 
-  // Quitar de uploadedImages (solo afecta a items 'upload'). Para
-  // productos/marcas/heroes hay que editar el item original (mensaje
-  // explicativo en la UI).
   const removeFromLibrary = (url) => {
     if (!url) return;
     if (!window.confirm('¿Borrar esta imagen de la biblioteca?\n\nSe quitará de los thumbnails. El archivo en WordPress NO se borra (entra a boprint.net/wp-admin → Media para eliminarlo del servidor).')) return;
@@ -2710,42 +2771,49 @@ function ImageLibraryAdminPanel({ appState, setAppState }) {
     }));
   };
 
-  const addUrl = (url) => {
-    const trimmed = (url || '').trim();
-    if (!trimmed || !/^https?:\/\//i.test(trimmed)) return;
-    setAppState(prev => {
-      const list = ((prev && prev.uploadedImages) || []);
-      if (list.some(x => x.url === trimmed)) return prev;
-      return { ...prev, uploadedImages: [...list, { url: trimmed, name: 'Manual', addedAt: Date.now() }] };
-    });
-    setPendingPaste('');
+  // Asignar / cambiar la marca de una imagen ya subida. Útil para
+  // re-clasificar el legado o corregir un mismatch sin re-subir.
+  const setUploadBrand = (url, newBrand) => {
+    setAppState(prev => ({
+      ...prev,
+      uploadedImages: ((prev && prev.uploadedImages) || []).map(x =>
+        x.url === url ? Object.assign({}, x, { brand: newBrand || null }) : x
+      ),
+    }));
   };
 
   return (
     <div style={{display:'flex', flexDirection:'column', gap:14, maxWidth:1100}}>
-      <div className="product-card" style={{padding:18}}>
-        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
-          <Icon name="copy" size={18}/>
-          <div style={{fontSize:14, fontWeight:600}}>Subir imagen nueva</div>
-        </div>
-        <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:10}}>
-          Sube un archivo a boprint.net o pega una URL externa. Aparecerá en la biblioteca para que cualquier comercial la use desde el composer.
-        </div>
-        <ImageUploadInput value="" onChange={url => { if (url) addUrl(url); }} prefix="library" placeholder="https://… (URL externa) o pulsa Subir / Biblioteca" />
-      </div>
+      <BulkImageUploader setAppState={setAppState} />
 
       <div className="product-card" style={{padding:18}}>
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, gap:12, flexWrap:'wrap'}}>
-          <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
-            {groups.map(g => (
-              <button key={g.id} className={'brand-chip' + (filter === g.id ? ' active' : '')} onClick={() => setFilter(g.id)}>
-                {g.label} <span className="mono" style={{opacity:0.6}}>{g.count}</span>
+        <div style={{display:'flex', flexDirection:'column', gap:10, marginBottom:12}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+            <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+              {groups.map(g => (
+                <button key={g.id} className={'brand-chip' + (filter === g.id ? ' active' : '')} onClick={() => setFilter(g.id)}>
+                  {g.label} <span className="mono" style={{opacity:0.6}}>{g.count}</span>
+                </button>
+              ))}
+            </div>
+            <div className="bo-search" style={{minWidth:220}}>
+              <Icon name="search" size={14}/>
+              <input placeholder="Buscar por nombre o URL…" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', borderTop:'1px solid var(--border)', paddingTop:10}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', fontWeight:600, letterSpacing:0.3}}>Marca:</span>
+            <button className={'brand-chip' + (brandFilter === 'all' ? ' active' : '')} onClick={() => setBrandFilter('all')}>
+              Todas <span className="mono" style={{opacity:0.6}}>{brandCounts.all}</span>
+            </button>
+            {allBrands.map(b => (
+              <button key={b.id} className={'brand-chip' + (brandFilter === b.id ? ' active' : '')} onClick={() => setBrandFilter(b.id)} disabled={!brandCounts[b.id]} style={{opacity: brandCounts[b.id] ? 1 : 0.45}}>
+                {b.label} <span className="mono" style={{opacity:0.6}}>{brandCounts[b.id] || 0}</span>
               </button>
             ))}
-          </div>
-          <div className="bo-search" style={{minWidth:220}}>
-            <Icon name="search" size={14}/>
-            <input placeholder="Buscar por nombre o URL…" value={search} onChange={e => setSearch(e.target.value)} />
+            <button className={'brand-chip' + (brandFilter === 'none' ? ' active' : '')} onClick={() => setBrandFilter('none')} disabled={!brandCounts.none} style={{opacity: brandCounts.none ? 1 : 0.45}}>
+              Sin marca <span className="mono" style={{opacity:0.6}}>{brandCounts.none}</span>
+            </button>
           </div>
         </div>
 
@@ -2757,38 +2825,182 @@ function ImageLibraryAdminPanel({ appState, setAppState }) {
 
         {filtered.length === 0 ? (
           <div style={{padding:'40px 20px', textAlign:'center', color:'var(--text-muted)', fontSize:13}}>
-            {items.length === 0 ? 'No hay imágenes todavía. Sube la primera arriba.' : 'Sin resultados con ese filtro.'}
+            {items.length === 0 ? 'No hay imágenes todavía. Sube las primeras arriba.' : 'Sin resultados con ese filtro.'}
           </div>
         ) : (
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:12}}>
-            {filtered.map((it, i) => (
-              <div key={i} style={{border:'1px solid var(--border)', borderRadius:'var(--r-sm)', overflow:'hidden', background:'var(--bg-panel)', display:'flex', flexDirection:'column'}}>
-                <div style={{aspectRatio:'4/3', display:'grid', placeItems:'center', overflow:'hidden', background:'#fff', position:'relative'}}>
-                  <img src={it.url} alt={it.label} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.opacity = 0.2; }}/>
-                  <span style={{position:'absolute', top:6, right:6, padding:'2px 6px', background:'rgba(0,0,0,0.7)', color:'#fff', borderRadius:4, fontSize:9, fontFamily:'var(--font-mono)'}}>{it.source}</span>
-                </div>
-                <div style={{padding:'8px 10px', display:'flex', flexDirection:'column', gap:4, flex:1}}>
-                  <div style={{fontSize:11, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{it.label || '(sin nombre)'}</div>
-                  <div style={{fontSize:9, color:'var(--text-muted)', fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}} title={it.url}>{it.url}</div>
-                  <div style={{display:'flex', gap:4, marginTop:'auto', paddingTop:6}}>
-                    <button className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', flex:1}} onClick={() => { navigator.clipboard?.writeText(it.url); }} title="Copiar URL">
-                      <Icon name="copy" size={10}/> URL
-                    </button>
-                    <a className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', flex:1, textDecoration:'none', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:4}} href={it.url} target="_blank" rel="noopener noreferrer" title="Abrir en pestaña nueva">
-                      <Icon name="share" size={10}/> Ver
-                    </a>
-                    {it.source === 'upload' && (
-                      <button className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', color:'var(--danger)'}} onClick={() => removeFromLibrary(it.url)} title="Quitar de la biblioteca">
-                        <Icon name="trash" size={10}/>
-                      </button>
+            {filtered.map((it, i) => {
+              const brandObj = it.brand ? allBrands.find(b => b.id === it.brand) : null;
+              return (
+                <div key={i} style={{border:'1px solid var(--border)', borderRadius:'var(--r-sm)', overflow:'hidden', background:'var(--bg-panel)', display:'flex', flexDirection:'column'}}>
+                  <div style={{aspectRatio:'4/3', display:'grid', placeItems:'center', overflow:'hidden', background:'#fff', position:'relative'}}>
+                    <img src={it.url} alt={it.label} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.opacity = 0.2; }}/>
+                    <span style={{position:'absolute', top:6, right:6, padding:'2px 6px', background:'rgba(0,0,0,0.7)', color:'#fff', borderRadius:4, fontSize:9, fontFamily:'var(--font-mono)'}}>{it.source}</span>
+                    {brandObj && (
+                      <span style={{position:'absolute', bottom:6, left:6, padding:'2px 7px', background: brandObj.color || '#444', color:'#fff', borderRadius:10, fontSize:9, fontWeight:700}}>{brandObj.label}</span>
                     )}
                   </div>
+                  <div style={{padding:'8px 10px', display:'flex', flexDirection:'column', gap:4, flex:1}}>
+                    <div style={{fontSize:11, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{it.label || '(sin nombre)'}</div>
+                    <div style={{fontSize:9, color:'var(--text-muted)', fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}} title={it.url}>{it.url}</div>
+                    {it.source === 'upload' && (
+                      <select className="select" value={it.brand || ''} onChange={e => setUploadBrand(it.url, e.target.value)} style={{fontSize:10, padding:'2px 6px', height:24}} title="Reasignar marca de esta imagen subida">
+                        <option value="">Sin marca</option>
+                        {allBrands.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                      </select>
+                    )}
+                    <div style={{display:'flex', gap:4, marginTop:'auto', paddingTop:6}}>
+                      <button className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', flex:1}} onClick={() => { navigator.clipboard?.writeText(it.url); }} title="Copiar URL">
+                        <Icon name="copy" size={10}/> URL
+                      </button>
+                      <a className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', flex:1, textDecoration:'none', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:4}} href={it.url} target="_blank" rel="noopener noreferrer" title="Abrir en pestaña nueva">
+                        <Icon name="share" size={10}/> Ver
+                      </a>
+                      {it.source === 'upload' && (
+                        <button className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', color:'var(--danger)'}} onClick={() => removeFromLibrary(it.url)} title="Quitar de la biblioteca">
+                          <Icon name="trash" size={10}/>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* Subida masiva — el admin selecciona N archivos a la vez, fija una marca
+   común y suben uno tras otro. Cada subida individual conserva su barra de
+   estado (OK / falló) para que se vea qué pasó con cada archivo. */
+function BulkImageUploader({ setAppState }) {
+  const [files, setFiles] = React.useState([]);
+  const [brand, setBrand] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [results, setResults] = React.useState([]); // [{name, url, error}]
+  const fileRef = React.useRef(null);
+  const allBrands = ((typeof window !== 'undefined' && window.BRANDS) || []).filter(b => b.id !== 'bomedia');
+
+  const addUrlToLib = (url, file, brandTag) => {
+    if (!url) return;
+    setAppState(prev => {
+      const list = ((prev && prev.uploadedImages) || []);
+      if (list.some(x => x.url === url)) return prev;
+      return { ...prev, uploadedImages: [...list, {
+        url, name: file.name || '', size: file.size, addedAt: Date.now(), brand: brandTag || null,
+      }] };
+    });
+  };
+
+  const onPickFiles = (e) => {
+    const list = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (list.length) {
+      setFiles(list);
+      setResults([]);
+    }
+  };
+
+  const startUpload = async () => {
+    const upload = (typeof window !== 'undefined' && typeof window.uploadImage === 'function') ? window.uploadImage : null;
+    if (!upload) {
+      setResults([{ name: '(global)', error: 'Subida no disponible (módulo de uploads no cargado)' }]);
+      return;
+    }
+    if (files.length === 0) return;
+    setBusy(true);
+    const out = files.map(f => ({ name: f.name, url: '', error: '', status: 'pending' }));
+    setResults(out.slice());
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        out[i].status = 'uploading';
+        setResults(out.slice());
+        const url = await upload(f, { prefix: 'library' });
+        out[i].url = url;
+        out[i].status = 'done';
+        addUrlToLib(url, f, brand);
+      } catch (e) {
+        out[i].error = e.message || String(e);
+        out[i].status = 'error';
+      }
+      setResults(out.slice());
+    }
+    setBusy(false);
+    setFiles([]);
+  };
+
+  const reset = () => { setFiles([]); setResults([]); };
+
+  return (
+    <div className="product-card" style={{padding:18}}>
+      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
+        <Icon name="copy" size={18}/>
+        <div style={{fontSize:14, fontWeight:600}}>Subir imágenes (admin · masivo)</div>
+      </div>
+      <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:10}}>
+        Sube uno o varios archivos a boprint.net asignándoles la misma marca. Útil para cargar de golpe muestras de impresión, fotos de feria, etc.
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr auto', gap:10, alignItems:'end'}}>
+        <div className="field" style={{margin:0}}>
+          <label className="field-label">Marca para todas las imágenes</label>
+          <select className="select" value={brand} onChange={e => setBrand(e.target.value)} disabled={busy}>
+            <option value="">— Sin marca específica —</option>
+            {allBrands.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-outline" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>
+          <Icon name="download" size={12}/> Elegir archivos…
+        </button>
+        <input type="file" accept="image/*" multiple ref={fileRef} onChange={onPickFiles} style={{display:'none'}} />
+      </div>
+
+      {files.length > 0 && (
+        <div style={{marginTop:12, padding:10, background:'var(--bg-sunken)', borderRadius:'var(--r-sm)'}}>
+          <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:8}}>
+            <strong>{files.length}</strong> archivo{files.length === 1 ? '' : 's'} seleccionado{files.length === 1 ? '' : 's'} · marca: <strong>{allBrands.find(b => b.id === brand)?.label || 'Sin marca'}</strong>
+          </div>
+          <div style={{display:'flex', flexDirection:'column', gap:4, maxHeight:180, overflowY:'auto', marginBottom:8}}>
+            {files.map((f, i) => (
+              <div key={i} style={{fontSize:11, color:'var(--text-muted)', fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                · {f.name} <span style={{opacity:0.5}}>({Math.round(f.size/1024)} KB)</span>
+              </div>
+            ))}
+          </div>
+          <div style={{display:'flex', gap:6}}>
+            <button className="btn btn-primary" onClick={startUpload} disabled={busy}>
+              {busy ? 'Subiendo…' : <><Icon name="zap" size={12}/> Subir {files.length} archivo{files.length === 1 ? '' : 's'}</>}
+            </button>
+            <button className="btn btn-ghost" onClick={reset} disabled={busy}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <div style={{marginTop:12, display:'flex', flexDirection:'column', gap:4}}>
+          <div style={{fontSize:11, color:'var(--text-muted)', fontWeight:600}}>Resultados:</div>
+          {results.map((r, i) => (
+            <div key={i} style={{
+              padding:'4px 10px', borderRadius:'var(--r-sm)', fontSize:11,
+              background: r.status === 'done' ? 'color-mix(in oklch, var(--success) 12%, var(--bg-sunken))' :
+                         r.status === 'error' ? 'color-mix(in oklch, var(--danger) 12%, var(--bg-sunken))' :
+                         'var(--bg-sunken)',
+              color: r.status === 'error' ? 'var(--danger)' : 'var(--text)',
+              fontFamily:'var(--font-mono)',
+              display:'flex', justifyContent:'space-between', gap:10,
+            }}>
+              <span style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                {r.status === 'done' ? '✓' : r.status === 'error' ? '✗' : r.status === 'uploading' ? '…' : '·'} {r.name}
+              </span>
+              <span style={{opacity:0.7}}>{r.error || (r.url ? 'subido' : r.status)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2801,29 +3013,33 @@ function ImageLibraryAdminPanel({ appState, setAppState }) {
 
 /* Collect every distinct image URL we can find across the appState. The
    resulting list is unique by URL and roughly grouped by source so the
-   modal can show "Subidas" first, then "Productos", etc. */
+   modal can show "Subidas" first, then "Productos", etc. Cada item
+   incluye también `brand` cuando se puede inferir (producto → su marca,
+   logo de marca → la marca, hero → marca del standalone, subidas → la
+   que el user marcó al subir). Las subidas antiguas sin brand quedan
+   con brand=null y aparecen como "sin marca" en los filtros. */
 function _collectKnownImages(appState) {
   const items = []
   const seen = new Set()
-  const push = (url, source, label) => {
+  const push = (url, source, label, brand) => {
     if (!url || typeof url !== 'string') return
     const u = url.trim()
     if (!u || !/^https?:|^data:/i.test(u)) return
     if (seen.has(u)) return
     seen.add(u)
-    items.push({ url: u, source, label: label || '' })
+    items.push({ url: u, source, label: label || '', brand: brand || null })
   }
   // Recent uploads first
-  ;(appState.uploadedImages || []).slice().reverse().forEach(it => push(it.url, 'upload', it.name))
-  // Products: img + per-lang i18n images
+  ;(appState.uploadedImages || []).slice().reverse().forEach(it => push(it.url, 'upload', it.name, it.brand))
+  // Products: img + per-lang i18n images. La marca se hereda del propio producto.
   ;(appState.products || []).forEach(p => {
-    push(p.img, 'product', p.name)
-    if (p.i18n) Object.values(p.i18n).forEach(loc => push(loc.img, 'product', p.name))
+    push(p.img, 'product', p.name, p.brand)
+    if (p.i18n) Object.values(p.i18n).forEach(loc => push(loc.img, 'product', p.name, p.brand))
   })
-  // Brand logos
-  ;(appState.brands || []).forEach(b => push(b.logo, 'brand', b.label))
-  // Hero images on standalone blocks
-  ;(appState.standaloneBlocks || []).forEach(sb => push(sb.config && sb.config.heroImage, 'hero', sb.title))
+  // Brand logos: brand = la propia marca
+  ;(appState.brands || []).forEach(b => push(b.logo, 'brand', b.label, b.id))
+  // Hero images on standalone blocks: brand = la del standalone
+  ;(appState.standaloneBlocks || []).forEach(sb => push(sb.config && sb.config.heroImage, 'hero', sb.title, sb.brand))
   return items
 }
 
@@ -2845,10 +3061,12 @@ function _registerRecorder(setAppState) {
 function ImageLibraryModal({ appState, setAppState, onPick, onClose }) {
   React.useEffect(() => { _registerRecorder(setAppState) }, [setAppState])
   const [filter, setFilter] = React.useState('all')
+  const [brandFilter, setBrandFilter] = React.useState('all')
   const [search, setSearch] = React.useState('')
   const items = React.useMemo(() => _collectKnownImages(appState || {}), [appState])
   const filtered = items.filter(it =>
     (filter === 'all' || it.source === filter) &&
+    (brandFilter === 'all' || (brandFilter === 'none' ? !it.brand : it.brand === brandFilter)) &&
     (!search || (it.label || '').toLowerCase().includes(search.toLowerCase()))
   )
   const groups = [
@@ -2858,6 +3076,16 @@ function ImageLibraryModal({ appState, setAppState, onPick, onClose }) {
     { id: 'brand', label: 'Marcas', count: items.filter(i => i.source === 'brand').length },
     { id: 'hero', label: 'Heroes', count: items.filter(i => i.source === 'hero').length },
   ]
+  const allBrands = ((typeof window !== 'undefined' && window.BRANDS) || (appState && appState.brands) || []).filter(b => b.id !== 'bomedia')
+  const itemsAfterSource = filter === 'all' ? items : items.filter(i => i.source === filter)
+  const brandCounts = (() => {
+    const counts = { all: itemsAfterSource.length, none: 0 }
+    for (const it of itemsAfterSource) {
+      if (!it.brand) counts.none++
+      else counts[it.brand] = (counts[it.brand] || 0) + 1
+    }
+    return counts
+  })()
   return (
     <>
       <div className="bo-drawer-overlay" onClick={onClose} style={{zIndex:50}}/>
@@ -2867,17 +3095,35 @@ function ImageLibraryModal({ appState, setAppState, onPick, onClose }) {
           <div style={{fontSize:14, fontWeight:600, flex:1}}>Biblioteca de imágenes</div>
           <button className="icon-btn" onClick={onClose}><Icon name="x" size={16}/></button>
         </div>
-        <div style={{padding:'10px 18px', borderBottom:'1px solid var(--border)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
-          <div className="bo-search" style={{flex:'1 1 200px', minWidth:200}}>
-            <Icon name="search" size={14}/>
-            <input placeholder="Buscar por nombre…" value={search} onChange={e => setSearch(e.target.value)}/>
+        <div style={{padding:'10px 18px', borderBottom:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:8}}>
+          <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+            <div className="bo-search" style={{flex:'1 1 200px', minWidth:200}}>
+              <Icon name="search" size={14}/>
+              <input placeholder="Buscar por nombre…" value={search} onChange={e => setSearch(e.target.value)}/>
+            </div>
+            <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
+              {groups.map(g => (
+                <button key={g.id} className={'brand-chip' + (filter === g.id ? ' active' : '')} onClick={() => setFilter(g.id)}>
+                  {g.label} <span className="mono" style={{opacity:0.6}}>{g.count}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
-            {groups.map(g => (
-              <button key={g.id} className={'brand-chip' + (filter === g.id ? ' active' : '')} onClick={() => setFilter(g.id)}>
-                {g.label} <span className="mono" style={{opacity:0.6}}>{g.count}</span>
+          <div style={{display:'flex', gap:4, alignItems:'center', flexWrap:'wrap'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', fontWeight:600, marginRight:4, letterSpacing:0.3}}>Marca:</span>
+            <button className={'brand-chip' + (brandFilter === 'all' ? ' active' : '')} onClick={() => setBrandFilter('all')}>
+              Todas <span className="mono" style={{opacity:0.6}}>{brandCounts.all}</span>
+            </button>
+            {allBrands.map(b => (
+              <button key={b.id} className={'brand-chip' + (brandFilter === b.id ? ' active' : '')} onClick={() => setBrandFilter(b.id)} disabled={!brandCounts[b.id]} style={{opacity: brandCounts[b.id] ? 1 : 0.45}}>
+                {b.label} <span className="mono" style={{opacity:0.6}}>{brandCounts[b.id] || 0}</span>
               </button>
             ))}
+            {brandCounts.none > 0 && (
+              <button className={'brand-chip' + (brandFilter === 'none' ? ' active' : '')} onClick={() => setBrandFilter('none')}>
+                Sin marca <span className="mono" style={{opacity:0.6}}>{brandCounts.none}</span>
+              </button>
+            )}
           </div>
         </div>
         <div style={{padding:14, borderBottom:'1px solid var(--border)'}}>
@@ -2890,19 +3136,25 @@ function ImageLibraryModal({ appState, setAppState, onPick, onClose }) {
             </div>
           )}
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))', gap:10}}>
-            {filtered.map((it, i) => (
-              <button key={i} onClick={() => onPick(it.url)} title={it.url}
-                style={{padding:0, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', background:'var(--bg-sunken)', cursor:'pointer', overflow:'hidden', display:'flex', flexDirection:'column'}}
-              >
-                <div style={{aspectRatio:'4/3', display:'grid', placeItems:'center', overflow:'hidden', background:'#fff'}}>
-                  <img src={it.url} alt={it.label} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.opacity = 0.2; }}/>
-                </div>
-                <div style={{padding:'6px 8px', fontSize:10, color:'var(--text-muted)', textAlign:'left', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
-                  <span style={{fontWeight:600, color:'var(--text)'}}>{it.label || '—'}</span>
-                  <span style={{marginLeft:6, padding:'1px 5px', background:'var(--bg-panel)', borderRadius:3, fontSize:9}}>{it.source}</span>
-                </div>
-              </button>
-            ))}
+            {filtered.map((it, i) => {
+              const brandObj = it.brand ? allBrands.find(b => b.id === it.brand) : null
+              return (
+                <button key={i} onClick={() => onPick(it.url)} title={it.url}
+                  style={{padding:0, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', background:'var(--bg-sunken)', cursor:'pointer', overflow:'hidden', display:'flex', flexDirection:'column'}}
+                >
+                  <div style={{aspectRatio:'4/3', display:'grid', placeItems:'center', overflow:'hidden', background:'#fff', position:'relative'}}>
+                    <img src={it.url} alt={it.label} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.opacity = 0.2; }}/>
+                    {brandObj && (
+                      <span style={{position:'absolute', bottom:4, left:4, padding:'1px 6px', background: brandObj.color || '#444', color:'#fff', borderRadius:8, fontSize:8, fontWeight:700}}>{brandObj.label}</span>
+                    )}
+                  </div>
+                  <div style={{padding:'6px 8px', fontSize:10, color:'var(--text-muted)', textAlign:'left', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                    <span style={{fontWeight:600, color:'var(--text)'}}>{it.label || '—'}</span>
+                    <span style={{marginLeft:6, padding:'1px 5px', background:'var(--bg-panel)', borderRadius:3, fontSize:9}}>{it.source}</span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
