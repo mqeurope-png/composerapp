@@ -22,10 +22,10 @@ const DEFAULT_PRODUCTS = [
   { id:"casebox", brand:"pimpam", name:"PimPam CaseBox", badge:"Interior · Retail", badgeBg:"#ffedd5", badgeColor:"#9a3412", img:"https://pimpam-vending.com/wp-content/uploads/2026/01/pimpam-aeropuerto.png", desc:"Máquina compacta de interior para centros comerciales y aeropuertos.", area:"-", alt:"-", feat1:"UV en TPU/Silicona/PC", feat2:"Múltiples formas de pago", price:"Consultar", link:"https://pimpam-vending.com/casebox-vending/", accent:"#ea580c", gradient:"linear-gradient(90deg,#ea580c,#f97316)", visible:true, i18n:{fr:{desc:"Machine compacte intérieure pour les centres commerciaux et les aéroports.",feat1:"UV en TPU/Silicone/PC",feat2:"Plusieurs modes de paiement",price:"Sur demande",link:"https://pimpam-vending.com/casebox-vending/",badge:"Intérieur · Retail"},de:{desc:"Kompakte Innenmaschine für Einkaufszentren und Flughäfen.",feat1:"UV auf TPU/Silikon/PC",feat2:"Mehrere Zahlungsmethoden",price:"Auf Anfrage",link:"https://pimpam-vending.com/casebox-vending/",badge:"Innen · Einzelhandel"},en:{desc:"Compact indoor machine for shopping centers and airports.",feat1:"UV on TPU/Silicone/PC",feat2:"Multiple payment methods",price:"On request",link:"https://pimpam-vending.com/casebox-vending/",badge:"Interior · Retail"},nl:{desc:"Compacte binnenmaschine voor winkelcentra en luchthavens.",feat1:"UV op TPU/Silicone/PC",feat2:"Meerdere betaalmethoden",price:"Op aanvraag",link:"https://pimpam-vending.com/casebox-vending/",badge:"Binnen · Retail"}} },
   { id:"custom", brand:"pimpam", name:"PimPam Custom", badge:"Tu marca", badgeBg:"#ffedd5", badgeColor:"#9a3412", img:"https://pimpam-vending.com/wp-content/uploads/2026/01/custom-pimpam-851x1024.png", desc:"Branding completo: vinilos, pantalla y campañas con tu marca.", area:"-", alt:"-", feat1:"Vinilos personalizados", feat2:"Campañas temporales", price:"Consultar", link:"https://pimpam-vending.com/custom/", accent:"#ea580c", gradient:"linear-gradient(90deg,#ea580c,#f97316)", visible:true, i18n:{fr:{desc:"Branding complet: vinyls, écran et campagnes avec votre marque.",feat1:"Vinyls personnalisés",feat2:"Campagnes temporelles",price:"Sur demande",link:"https://pimpam-vending.com/custom/",badge:"Votre marque"},de:{desc:"Vollständiges Branding: Vinyls, Bildschirm und Kampagnen mit Ihrer Marke.",feat1:"Personalisierte Vinyls",feat2:"Zeitliche Kampagnen",price:"Auf Anfrage",link:"https://pimpam-vending.com/custom/",badge:"Ihre Marke"},en:{desc:"Complete branding: vinyls, screen and campaigns with your brand.",feat1:"Custom vinyls",feat2:"Temporary campaigns",price:"On request",link:"https://pimpam-vending.com/custom/",badge:"Your brand"},nl:{desc:"Compleet branding: vinyls, scherm en campagnes met uw merk.",feat1:"Aangepaste vinyls",feat2:"Tijdelijke campagnes",price:"Op aanvraag",link:"https://pimpam-vending.com/custom/",badge:"Uw merk"}} },
   /* ── SmartJet FLEX ── */
-  { id:"flexone", brand:"smartjet", name:"SmartJet FLEX ONE", badge:"Entry Level", badgeBg:"#dcfce7", badgeColor:"#15803d", img:"https://boprint.net/wp-content/uploads/2025/12/BB2_Pocket_Shopify_desktop-2.png", desc:"La más accesible. Diseño compacto, uso intuitivo, calidad sólida para packaging.", area:"297 mm ancho", alt:"35 cm", feat1:"1200 ppp · HP PageWide", feat2:"27 m/min · INTEGRA", price:"desde 1.000 €/mes", link:"https://boprint.net/producto/flex-one/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Most accessible. Compact design, intuitive use, solid quality for packaging.",feat1:"1200 dpi · HP PageWide",feat2:"27 m/min · INTEGRA",price:"from €1,000/mo",badge:"Entry Level"},fr:{desc:"La plus accessible. Design compact, usage intuitif, qualité solide pour le packaging.",feat1:"1200 ppp · HP PageWide",feat2:"27 m/min · INTEGRA",price:"à partir de 1 000 €/mois",badge:"Entrée de gamme"}} },
-  { id:"flex297", brand:"smartjet", name:"SmartJet FLEX 297", badge:"Versátil", badgeBg:"#ccfbf1", badgeColor:"#0d9488", img:"https://boprint.net/wp-content/uploads/2025/12/flex297-cover.png", desc:"Versátil y robusta. Equilibrio perfecto entre calidad, inversión y facilidad de operación.", area:"297 mm ancho", alt:"35 cm", feat1:"1200 ppp · HP PageWide", feat2:"27 m/min · INTEGRA BASIC 24\"", price:"Consultar", link:"https://boprint.net/producto/flex-297/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Versatile and robust. Perfect balance between quality, investment and ease of operation.",feat1:"1200 dpi · HP PageWide",feat2:"27 m/min · INTEGRA BASIC 24\"",price:"On request",badge:"Versatile"},fr:{desc:"Polyvalente et robuste. Équilibre parfait entre qualité, investissement et facilité d'utilisation.",feat1:"1200 ppp · HP PageWide",feat2:"27 m/min · INTEGRA BASIC 24\"",price:"Sur demande",badge:"Polyvalente"}} },
-  { id:"flexultra", brand:"smartjet", name:"SmartJet FLEX ULTRA", badge:"Avanzada", badgeBg:"#cffafe", badgeColor:"#0e7490", img:"https://boprint.net/wp-content/uploads/2025/12/flex-ultra-1600x1184-1.png", desc:"Calidad premium. Pantalla INTEGRA PRO 32\", analítica de producción y control avanzado.", area:"297 mm ancho", alt:"35 cm", feat1:"1200 ppp · INTEGRA PRO 32\"", feat2:"Analítica y control avanzado", price:"Consultar", link:"https://boprint.net/producto/flex-ultra/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Premium quality. 32\" INTEGRA PRO screen, production analytics and advanced control.",feat1:"1200 dpi · INTEGRA PRO 32\"",feat2:"Analytics and advanced control",price:"On request",badge:"Advanced"},fr:{desc:"Qualité premium. Écran INTEGRA PRO 32\", analytique de production et contrôle avancé.",feat1:"1200 ppp · INTEGRA PRO 32\"",feat2:"Analytique et contrôle avancé",price:"Sur demande",badge:"Avancée"}} },
-  { id:"flex324", brand:"smartjet", name:"SmartJet FLEX 324", badge:"Alta Producción", badgeBg:"#fee2e2", badgeColor:"#991b1b", img:"https://boprint.net/wp-content/uploads/2025/12/flex324.png", desc:"Máxima capacidad. 1600 ppp, 46 m/min. Para entornos industriales de gran volumen.", area:"324 mm ancho", alt:"35 cm", feat1:"1600 ppp · HP PageWide", feat2:"46 m/min · INTEGRA", price:"Consultar", link:"https://boprint.net/producto/flex-324/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Maximum capacity. 1600 dpi, 46 m/min. For high-volume industrial environments.",feat1:"1600 dpi · HP PageWide",feat2:"46 m/min · INTEGRA",price:"On request",badge:"High Production"},fr:{desc:"Capacité maximale. 1600 ppp, 46 m/min. Pour environnements industriels à haut volume.",feat1:"1600 ppp · HP PageWide",feat2:"46 m/min · INTEGRA",price:"Sur demande",badge:"Haute Production"}} },
+  { id:"flexone", brand:"smartjet", name:"SmartJet FLEX ONE", badge:"Entry Level", badgeBg:"#dcfce7", badgeColor:"#15803d", img:"https://boprint.net/wp-content/uploads/2025/12/BB2_Pocket_Shopify_desktop-2.png", desc:"La más accesible. Diseño compacto, uso intuitivo, calidad sólida para packaging.", area:"297 mm ancho", alt:"35 cm", feat1:"1200 ppp · HP PageWide", feat2:"27 m/min · INTEGRA", price:"desde 1.000 €/mes", link:"https://boprint.net/producto/flex-one/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Most accessible. Compact design, intuitive use, solid quality for packaging.",feat1:"1200 dpi · HP PageWide",feat2:"27 m/min · INTEGRA",price:"from €1,000/mo",link:"https://boprint.net/producto/flex-one/",badge:"Entry Level"},fr:{desc:"La plus accessible. Design compact, usage intuitif, qualité solide pour le packaging.",feat1:"1200 ppp · HP PageWide",feat2:"27 m/min · INTEGRA",price:"à partir de 1 000 €/mois",link:"https://boprint.net/producto/flex-one/",badge:"Entrée de gamme"},de:{link:"https://boprint.net/producto/flex-one/"},nl:{link:"https://boprint.net/producto/flex-one/"}} },
+  { id:"flex297", brand:"smartjet", name:"SmartJet FLEX 297", badge:"Versátil", badgeBg:"#ccfbf1", badgeColor:"#0d9488", img:"https://boprint.net/wp-content/uploads/2025/12/flex297-cover.png", desc:"Versátil y robusta. Equilibrio perfecto entre calidad, inversión y facilidad de operación.", area:"297 mm ancho", alt:"35 cm", feat1:"1200 ppp · HP PageWide", feat2:"27 m/min · INTEGRA BASIC 24\"", price:"Consultar", link:"https://boprint.net/producto/flex-297/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Versatile and robust. Perfect balance between quality, investment and ease of operation.",feat1:"1200 dpi · HP PageWide",feat2:"27 m/min · INTEGRA BASIC 24\"",price:"On request",link:"https://boprint.net/producto/flex-297/",badge:"Versatile"},fr:{desc:"Polyvalente et robuste. Équilibre parfait entre qualité, investissement et facilité d'utilisation.",feat1:"1200 ppp · HP PageWide",feat2:"27 m/min · INTEGRA BASIC 24\"",price:"Sur demande",link:"https://boprint.net/producto/flex-297/",badge:"Polyvalente"},de:{link:"https://boprint.net/producto/flex-297/"},nl:{link:"https://boprint.net/producto/flex-297/"}} },
+  { id:"flexultra", brand:"smartjet", name:"SmartJet FLEX ULTRA", badge:"Avanzada", badgeBg:"#cffafe", badgeColor:"#0e7490", img:"https://boprint.net/wp-content/uploads/2025/12/flex-ultra-1600x1184-1.png", desc:"Calidad premium. Pantalla INTEGRA PRO 32\", analítica de producción y control avanzado.", area:"297 mm ancho", alt:"35 cm", feat1:"1200 ppp · INTEGRA PRO 32\"", feat2:"Analítica y control avanzado", price:"Consultar", link:"https://boprint.net/producto/flex-ultra/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Premium quality. 32\" INTEGRA PRO screen, production analytics and advanced control.",feat1:"1200 dpi · INTEGRA PRO 32\"",feat2:"Analytics and advanced control",price:"On request",link:"https://boprint.net/producto/flex-ultra/",badge:"Advanced"},fr:{desc:"Qualité premium. Écran INTEGRA PRO 32\", analytique de production et contrôle avancé.",feat1:"1200 ppp · INTEGRA PRO 32\"",feat2:"Analytique et contrôle avancé",price:"Sur demande",link:"https://boprint.net/producto/flex-ultra/",badge:"Avancée"},de:{link:"https://boprint.net/producto/flex-ultra/"},nl:{link:"https://boprint.net/producto/flex-ultra/"}} },
+  { id:"flex324", brand:"smartjet", name:"SmartJet FLEX 324", badge:"Alta Producción", badgeBg:"#fee2e2", badgeColor:"#991b1b", img:"https://boprint.net/wp-content/uploads/2025/12/flex324.png", desc:"Máxima capacidad. 1600 ppp, 46 m/min. Para entornos industriales de gran volumen.", area:"324 mm ancho", alt:"35 cm", feat1:"1600 ppp · HP PageWide", feat2:"46 m/min · INTEGRA", price:"Consultar", link:"https://boprint.net/categoria-producto/smartjet-flex/", accent:"#0d9488", gradient:"linear-gradient(90deg,#0d9488,#14b8a6)", visible:true, i18n:{en:{desc:"Maximum capacity. 1600 dpi, 46 m/min. For high-volume industrial environments.",feat1:"1600 dpi · HP PageWide",feat2:"46 m/min · INTEGRA",price:"On request",link:"https://boprint.net/categoria-producto/smartjet-flex/",badge:"High Production"},fr:{desc:"Capacité maximale. 1600 ppp, 46 m/min. Pour environnements industriels à haut volume.",feat1:"1600 ppp · HP PageWide",feat2:"46 m/min · INTEGRA",price:"Sur demande",link:"https://boprint.net/categoria-producto/smartjet-flex/",badge:"Haute Production"},de:{link:"https://boprint.net/categoria-producto/smartjet-flex/"},nl:{link:"https://boprint.net/categoria-producto/smartjet-flex/"}} },
 ]
 
 function getDefaultState() {
@@ -148,6 +148,85 @@ const STANDALONE_BLOCKS = _DEFAULT_STATE.standaloneBlocks.map(sb => Object.assig
   type: sb.blockType,
 }))
 
+/* Re-poblar i18n.{lang}.link en productos cuando se haya "perdido" en
+   Supabase (típicamente porque al editar un producto desde BO se sobre-
+   escribió el campo i18n con el link base por error). La regla:
+   - Si data.product.i18n[lang].link no existe → poner el de defaults
+   - Si data.product.i18n[lang].link === data.product.link → "perdido",
+     poner el de defaults (eran iguales al base, signo de pérdida)
+   - Si tiene un valor distinto al base → respetar (es customización
+     intencionada del usuario)
+   Idempotente. Si los datos ya están bien, no hace nada. */
+function repairProductLinks(state) {
+  if (!state || typeof state !== 'object') return state
+  if (!Array.isArray(state.products)) return state
+  const defaults = getDefaultState()
+  // Normalizamos los IDs para emparejar variantes con/sin guión: el data
+  // del user puede tener "flex-one" mientras los defaults tienen "flexone".
+  // La normalización quita guiones, guiones-bajos y bajamos a minúsculas.
+  const normalizeId = (id) => String(id || '').toLowerCase().replace(/[-_]/g, '')
+  const defaultMap = {}
+  defaults.products.forEach(dp => {
+    defaultMap[dp.id] = dp
+    defaultMap[normalizeId(dp.id)] = dp
+  })
+  const langs = ['fr','de','en','nl']
+  let touched = 0
+  const next = state.products.map(p => {
+    const dp = defaultMap[p.id] || defaultMap[normalizeId(p.id)]
+    if (!dp || !dp.i18n) return p
+    const baseLink = p.link || ''
+    let i18n = p.i18n ? Object.assign({}, p.i18n) : {}
+    let changedThis = false
+    langs.forEach(lang => {
+      const expected = dp.i18n[lang] && dp.i18n[lang].link
+      if (!expected) return // defaults no tiene traducción para ese idioma
+      const userLangBlock = i18n[lang] || {}
+      const userLink = userLangBlock.link
+      // Heurísticas para detectar i18n roto/perdido:
+      // 1. No existe → poner el de defaults
+      // 2. Es igual al base (sin traducir realmente)
+      // 3. URL "rara" — el dominio coincide con el de defaults pero el path
+      //    no es el esperado (ej. dominio de.artisjet pero slug español
+      //    /producto/ — eso es señal clara de pérdida en BO).
+      let isLost = !userLink || userLink === baseLink
+      if (!isLost && userLink && expected) {
+        try {
+          const userUrl = new URL(userLink)
+          const expectedUrl = new URL(expected)
+          if (userUrl.host === expectedUrl.host && userUrl.pathname !== expectedUrl.pathname) {
+            // Caso típico: artisjet-printers.eu/producto/foo (mal) vs
+            // artisjet-printers.eu/shop/foo (bien). Mismo host, distinto path.
+            // Si el path del user contiene "/producto/" y el expected
+            // contiene "/shop/" o "/product/", lo consideramos roto.
+            const userIsSpanishSlug = /\/producto\//.test(userUrl.pathname)
+            const expectedIsForeign = /\/(shop|product)\//.test(expectedUrl.pathname)
+            if (userIsSpanishSlug && expectedIsForeign) isLost = true
+          }
+        } catch (e) {} // URL inválida → no es roto, puede ser un edge case
+      }
+      if (isLost && userLink !== expected) {
+        i18n[lang] = Object.assign({}, userLangBlock, { link: expected })
+        changedThis = true
+      }
+    })
+    // También parchea el base.link si en defaults cambió (caso flex324
+    // que dejó de existir como página individual)
+    if (dp.link && p.link !== dp.link && p.link === 'https://boprint.net/producto/flex-324/') {
+      const fixed = Object.assign({}, p, { link: dp.link, i18n })
+      touched++
+      return fixed
+    }
+    if (changedThis) {
+      touched++
+      return Object.assign({}, p, { i18n })
+    }
+    return p
+  })
+  if (touched === 0) return state
+  return Object.assign({}, state, { products: next })
+}
+
 /* Re-tag any legacy `mbo`-branded item whose visible text mentions DTF over
    to the new `mbo_dtf` brand. Mutation-free; returns the patched state. The
    match is conservative: only the item's own name/title/desc/text fields are
@@ -195,5 +274,5 @@ function migrateMboDtf(state) {
 Object.assign(window, {
   DEFAULT_PRODUCTS, getDefaultState, createBlock, LANGS, LANG_LABELS,
   PRODUCTS, BRANDS, PREWRITTEN_TEXTS, TEMPLATES, STANDALONE_BLOCKS, COMPOSED_BLOCKS,
-  migrateMboDtf,
+  migrateMboDtf, repairProductLinks,
 })

@@ -84,6 +84,9 @@ function App() {
       // One-shot migration: split DTF items off into the mbo_dtf brand
       // (idempotent — checks for the keyword each time).
       if (typeof migrateMboDtf === 'function') Object.assign(stored, migrateMboDtf(stored));
+      // Repara i18n.{lang}.link en productos que se han "perdido"
+      // (igualados al base) o que faltan. Idempotente.
+      if (typeof repairProductLinks === 'function') Object.assign(stored, repairProductLinks(stored));
       if (!stored.standaloneBlocks) stored.standaloneBlocks = defaults.standaloneBlocks;
       if (!stored.templates) stored.templates = defaults.templates;
       // Backwards-compat: if there's no users[] yet, create a single admin
@@ -281,6 +284,7 @@ function App() {
         // "DTF" from the legacy `mbo` brand to the new `mbo_dtf`. Idempotent
         // — re-running it on already-migrated data is a no-op.
         cloudData = migrateMboDtf(cloudData);
+        if (typeof repairProductLinks === 'function') cloudData = repairProductLinks(cloudData);
         if (!cloudData.standaloneBlocks) cloudData.standaloneBlocks = defaults.standaloneBlocks;
         if (!cloudData.templates) cloudData.templates = defaults.templates;
         // Multi-user migration: pre-existing Supabase rows have no users[].
