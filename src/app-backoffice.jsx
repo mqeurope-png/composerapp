@@ -866,6 +866,16 @@ function TextBOEdit({ data, setData, lang }) {
 
   const isTranslated = (l) => l === 'es' ? true : !!(i18nAll[l] && i18nAll[l].text);
 
+  // Asistente IA — misma popover que el composer e inspector. Permite generar
+  // texto desde cero (modo "create") o reescribir el existente (modo "rewrite")
+  // en el idioma activo. El resultado se aplica al campo correspondiente
+  // (data.text si lang=es, data.i18n[lang].text si no).
+  const [aiOpen, setAiOpen] = React.useState(false);
+  const applyAi = (newText) => {
+    setText(newText);
+    setAiOpen(false);
+  };
+
   return (
     <>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
@@ -890,12 +900,30 @@ function TextBOEdit({ data, setData, lang }) {
       <div className="field">
         <div className="field-label-row">
           <label className="field-label">Texto ({lang.toUpperCase()})</label>
-          {!isBase && (
-            <button className="field-reset" onClick={() => setText('')} title="Borrar override de este idioma">Restaurar</button>
-          )}
+          <div style={{display:'flex', gap:6, alignItems:'center'}}>
+            <button
+              className="btn btn-ghost"
+              style={{fontSize:11, padding:'3px 10px', background:'linear-gradient(135deg, color-mix(in oklch, #8b5cf6 18%, transparent), color-mix(in oklch, #ec4899 18%, transparent))'}}
+              onClick={() => setAiOpen(true)}
+              title="Generar/reescribir con IA en el idioma activo"
+            >
+              <Icon name="sparkles" size={11}/> IA
+            </button>
+            {!isBase && (
+              <button className="field-reset" onClick={() => setText('')} title="Borrar override de este idioma">Restaurar</button>
+            )}
+          </div>
         </div>
         <textarea className="textarea" rows={6} value={text} placeholder={isBase ? '' : (data.text || '')} onChange={e => setText(e.target.value)} />
         <div className="char-count mono">{text.length} caracteres</div>
+        {aiOpen && typeof window.AiTextPopover === 'function' && (
+          <window.AiTextPopover
+            lang={lang}
+            currentText={text}
+            onApply={applyAi}
+            onClose={() => setAiOpen(false)}
+          />
+        )}
       </div>
 
       <div className="field">
@@ -1119,6 +1147,14 @@ function ComposedBOEdit({ data, setData, lang }) {
     [next[idx], next[j]] = [next[j], next[idx]];
     setCompBlocks(next);
   };
+  // El primer hero suelto disponible se ofrece como source por defecto
+  // cuando el user añade un bloque hero al compuesto. Si no hay ningún
+  // hero en standaloneBlocks, el bloque se añade sin _sourceId y el user
+  // escribirá los campos a mano (más adelante) — nada se rompe.
+  const standalones = (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || STANDALONE_BLOCKS || [];
+  const heroStandalones = standalones.filter(s => (s.blockType || s.type) === 'pimpam_hero' && s.visible !== false);
+  const defaultHero = heroStandalones[0] || null;
+
   const addChild = (kind) => {
     const factory = {
       text: () => ({ type: 'text', overridesByLang: { es: '' } }),
@@ -1131,6 +1167,18 @@ function ComposedBOEdit({ data, setData, lang }) {
       divider_short: () => ({ type: 'divider_short' }),
       divider_dots: () => ({ type: 'divider_dots' }),
       video: () => ({ type: 'video', youtubeUrl: '' }),
+      // Hero: por defecto enlazamos al primer hero suelto disponible. Así
+      // hereda los textos/bullets/CTAs del source y se puede repickear en
+      // el editor inline.
+      pimpam_hero: () => defaultHero
+        ? { type: 'pimpam_hero', standaloneId: defaultHero.id, _sourceType: 'standalone', _sourceId: defaultHero.id }
+        : { type: 'pimpam_hero', heroTitle: '', heroSubtitle: '', heroBullets: [], heroCtaButtons: [] },
+      // CTA inline. Mismos campos que el bloque CTA del composer.
+      cta: () => ({ type: 'cta', text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center' }),
+      // Secciones multi-columna. Cada columna empieza vacía; el editor
+      // permite añadir hijos recursivamente.
+      section_2col: () => ({ type: 'section', layout: '2col', columns: [{ blocks: [] }, { blocks: [] }] }),
+      section_3col: () => ({ type: 'section', layout: '3col', columns: [{ blocks: [] }, { blocks: [] }, { blocks: [] }] }),
     };
     const f = factory[kind];
     if (!f) return;
@@ -1199,28 +1247,46 @@ function ComposedBOEdit({ data, setData, lang }) {
             />
           ))}
         </div>
-        <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
-          <span style={{fontSize:11, color:'var(--text-muted)', alignSelf:'center', marginRight:4}}>Añadir:</span>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('text')}><Icon name="text" size={11}/> Texto</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('brand_strip')}><Icon name="palette" size={11}/> Strip de marca</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_single')}><Icon name="box" size={11}/> 1 producto</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_pair')}><Icon name="box" size={11}/> 2 productos</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_trio')}><Icon name="box" size={11}/> 3 productos</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('image')}><Icon name="copy" size={11}/> Imagen</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('divider_line')}>— Divisor</button>
-          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('video')}><Icon name="zap" size={11}/> Vídeo</button>
+        <div style={{display:'flex', flexDirection:'column', gap:4, marginTop:8}}>
+          <div style={{display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', marginRight:4, fontWeight:600, letterSpacing:0.3}}>Contenido:</span>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('text')}><Icon name="text" size={11}/> Texto</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_single')}><Icon name="box" size={11}/> 1 producto</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_pair')}><Icon name="box" size={11}/> 2 productos</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_trio')}><Icon name="box" size={11}/> 3 productos</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('image')}><Icon name="copy" size={11}/> Imagen</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('video')}><Icon name="zap" size={11}/> Vídeo</button>
+          </div>
+          <div style={{display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', marginRight:4, fontWeight:600, letterSpacing:0.3}}>Estructura:</span>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('pimpam_hero')} disabled={!defaultHero} title={!defaultHero ? 'No hay heros sueltos creados — crea uno primero en "Bloques sueltos"' : ''}><Icon name="zap" size={11}/> Hero</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('cta')}><Icon name="zap" size={11}/> CTA</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('brand_strip')}><Icon name="palette" size={11}/> Strip de marca</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('section_2col')}><Icon name="grid" size={11}/> 2 columnas</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('section_3col')}><Icon name="grid" size={11}/> 3 columnas</button>
+            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('divider_line')}>— Divisor</button>
+          </div>
         </div>
       </div>
     </>
   );
 }
 
-/* Mini-editor inline para un bloque hijo dentro de un compuesto. Solo
-   muestra los campos esenciales para cada tipo. La barra superior trae
-   etiqueta, mover arriba/abajo y eliminar; debajo el formulario. */
+/* Mini-editor inline para un bloque hijo dentro de un compuesto. Soporta
+   los mismos tipos que el composer: texto (con picker de pre-escritos +
+   asistente IA), productos (1/2/3), strip de marca, imagen, divisores,
+   vídeo, hero (linkado a un standalone), CTA y secciones de columnas
+   (recursivas — la sección renderiza un mini-editor por cada columna). */
 function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, onMove }) {
   const allProducts = (typeof window !== 'undefined' && window.PRODUCTS) || PRODUCTS || [];
   const allBrands = (typeof window !== 'undefined' && window.BRANDS) || BRANDS || [];
+  const allTexts = (typeof window !== 'undefined' && window.PREWRITTEN_TEXTS) || PREWRITTEN_TEXTS || [];
+  const allStandalones = (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || STANDALONE_BLOCKS || [];
+  const heroStandalones = allStandalones.filter(s => (s.blockType || s.type) === 'pimpam_hero' && s.visible !== false);
+
+  const [aiOpen, setAiOpen] = React.useState(false);
+  const [showSections, setShowSections] = React.useState(false);
+
   const typeLabel = {
     text: 'Texto',
     brand_strip: 'Strip de marca',
@@ -1236,6 +1302,7 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
     pimpam_hero: 'Hero',
     pimpam_steps: 'Pasos',
     cta: 'CTA',
+    section: (block.layout === '3col' ? '3 columnas' : '2 columnas'),
   }[block.type] || block.type;
 
   const visibleProducts = allProducts.filter(p => p.visible !== false);
@@ -1249,8 +1316,18 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
   // Para 'text' usamos overridesByLang (mismo formato que el resto del v3).
   // Si el bloque viene en formato legacy con `text` + `i18n`, lo migramos
   // de vuelta al formato moderno cuando el user edita.
+  const linkedText = block.textId ? allTexts.find(t => t.id === block.textId) : null;
+  // Resolvemos el texto a mostrar: si hay textId y NO hay override del idioma
+  // activo, mostramos el texto del source (read-only por defecto). Si el user
+  // escribe algo, se vuelca a overridesByLang[lang] (override por idioma).
+  const resolveSourceText = (t, l) => {
+    if (!t) return '';
+    if (l !== 'es' && t.i18n && t.i18n[l] && t.i18n[l].text != null) return t.i18n[l].text;
+    return t.text || '';
+  };
   const textValue = (() => {
     if (block.overridesByLang && block.overridesByLang[lang] != null) return block.overridesByLang[lang];
+    if (linkedText) return resolveSourceText(linkedText, lang);
     if (lang !== 'es' && block.i18n && block.i18n[lang] && block.i18n[lang].text != null) return block.i18n[lang].text;
     if (lang === 'es') return block.text || '';
     return '';
@@ -1265,6 +1342,72 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
     }
     onUpdate({ overridesByLang, text: undefined, i18n: undefined });
   };
+  // Aplicar resultado de IA: machacamos el override del idioma activo.
+  // Si el bloque venía con textId, mantenemos la referencia (override puntual
+  // sobre el source).
+  const applyAi = (newText) => {
+    setTextValue(newText);
+    setAiOpen(false);
+  };
+
+  // Cambiar el textId enlazado. Si el user pasa de "vacío" a un pre-escrito,
+  // limpiamos overridesByLang para que se herede del source. Si pasa de un
+  // pre-escrito a "vacío", copiamos el texto actual al override ES para no
+  // perder lo que estaba pintado en pantalla.
+  const setLinkedTextId = (newId) => {
+    if (newId === '') {
+      const seedEs = textValue || '';
+      onUpdate({ textId: undefined, overridesByLang: { es: seedEs } });
+    } else {
+      onUpdate({ textId: newId, overridesByLang: undefined, text: undefined, i18n: undefined });
+    }
+  };
+
+  // Editor de hijos para secciones (recursivo). Cada columna tiene su propia
+  // lista de bloques con su propio picker — mismas operaciones que el
+  // top-level pero scoped al subarray columns[ci].blocks.
+  const updateSectionChild = (colIdx, childIdx, patch) => {
+    const cols = (block.columns || []).slice();
+    const col = cols[colIdx] || { blocks: [] };
+    const blocks = (col.blocks || []).map((b, i) => i === childIdx ? Object.assign({}, b, patch) : b);
+    cols[colIdx] = { ...col, blocks };
+    onUpdate({ columns: cols });
+  };
+  const removeSectionChild = (colIdx, childIdx) => {
+    const cols = (block.columns || []).slice();
+    const col = cols[colIdx] || { blocks: [] };
+    cols[colIdx] = { ...col, blocks: (col.blocks || []).filter((_, i) => i !== childIdx) };
+    onUpdate({ columns: cols });
+  };
+  const moveSectionChild = (colIdx, childIdx, dir) => {
+    const cols = (block.columns || []).slice();
+    const col = cols[colIdx] || { blocks: [] };
+    const blocks = (col.blocks || []).slice();
+    const j = childIdx + dir;
+    if (j < 0 || j >= blocks.length) return;
+    [blocks[childIdx], blocks[j]] = [blocks[j], blocks[childIdx]];
+    cols[colIdx] = { ...col, blocks };
+    onUpdate({ columns: cols });
+  };
+  const addSectionChild = (colIdx, kind) => {
+    const colFactory = {
+      text: () => ({ type: 'text', overridesByLang: { es: '' } }),
+      brand_strip: () => ({ type: 'brand_strip', brand: 'mbo' }),
+      product_single: () => ({ type: 'product_single', product1: '' }),
+      image: () => ({ type: 'image', src: '', alt: '', align: 'center', widthPct: 100 }),
+      cta: () => ({ type: 'cta', text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center' }),
+      divider_line: () => ({ type: 'divider_line' }),
+      video: () => ({ type: 'video', youtubeUrl: '' }),
+    };
+    const f = colFactory[kind];
+    if (!f) return;
+    const cols = (block.columns || []).slice();
+    const col = cols[colIdx] || { blocks: [] };
+    cols[colIdx] = { ...col, blocks: [...(col.blocks || []), f()] };
+    onUpdate({ columns: cols });
+  };
+
+  const heroSource = block._sourceId ? allStandalones.find(s => s.id === block._sourceId) : null;
 
   return (
     <div style={{
@@ -1286,13 +1429,65 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
       </div>
 
       {block.type === 'text' && (
-        <textarea
-          className="textarea" rows={3}
-          value={textValue}
-          placeholder={lang === 'es' ? 'Escribe el texto…' : '(traducción ' + lang.toUpperCase() + ')'}
-          onChange={e => setTextValue(e.target.value)}
-          style={{fontSize:12}}
-        />
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          <div style={{display:'flex', gap:6, alignItems:'center'}}>
+            <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:600, letterSpacing:0.3}}>Pre-escrito:</span>
+            <select
+              className="select" style={{flex:1, fontSize:11}}
+              value={block.textId || ''}
+              onChange={e => setLinkedTextId(e.target.value)}
+              title="Enlaza con un texto pre-escrito de la biblioteca; el override de cada idioma sigue siendo editable abajo"
+            >
+              <option value="">— Sin enlazar (texto libre) —</option>
+              {allTexts.filter(t => t.visible !== false).map(t => (
+                <option key={t.id} value={t.id}>{t.icon ? t.icon + '  ' : ''}{t.name}</option>
+              ))}
+            </select>
+            <button
+              className="btn btn-ghost"
+              style={{fontSize:11, padding:'4px 8px', whiteSpace:'nowrap', background:'linear-gradient(135deg, color-mix(in oklch, #8b5cf6 18%, transparent), color-mix(in oklch, #ec4899 18%, transparent))'}}
+              onClick={() => setAiOpen(true)}
+              title="Generar/reescribir con IA en el idioma activo"
+            >
+              <Icon name="sparkles" size={11}/> IA
+            </button>
+          </div>
+          <textarea
+            className="textarea" rows={3}
+            value={textValue}
+            placeholder={
+              linkedText
+                ? (block.overridesByLang && block.overridesByLang[lang] != null
+                    ? ''
+                    : '(usando el texto del pre-escrito · escribe aquí para sobreescribir solo en ' + lang.toUpperCase() + ')')
+                : (lang === 'es' ? 'Escribe el texto…' : '(traducción ' + lang.toUpperCase() + ')')
+            }
+            onChange={e => setTextValue(e.target.value)}
+            style={{fontSize:12}}
+          />
+          {linkedText && block.overridesByLang && block.overridesByLang[lang] != null && (
+            <button
+              className="btn btn-ghost"
+              style={{fontSize:10, padding:'2px 8px', alignSelf:'flex-start'}}
+              onClick={() => {
+                const ovr = Object.assign({}, block.overridesByLang || {});
+                delete ovr[lang];
+                onUpdate({ overridesByLang: Object.keys(ovr).length ? ovr : undefined });
+              }}
+              title="Quitar override · vuelve a heredar del texto pre-escrito"
+            >
+              ↻ Restaurar herencia
+            </button>
+          )}
+          {aiOpen && typeof window.AiTextPopover === 'function' && (
+            <window.AiTextPopover
+              lang={lang}
+              currentText={textValue}
+              onApply={applyAi}
+              onClose={() => setAiOpen(false)}
+            />
+          )}
+        </div>
       )}
 
       {block.type === 'brand_strip' && (
@@ -1352,11 +1547,101 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
         <input className="input" value={block.youtubeUrl || ''} placeholder="https://www.youtube.com/watch?v=…" onChange={e => onUpdate({ youtubeUrl: e.target.value })} style={{fontSize:11, fontFamily:'var(--font-mono)'}} />
       )}
 
-      {(block.type === 'pimpam_hero' || block.type === 'pimpam_steps' || block.type === 'cta') && (
+      {block.type === 'pimpam_hero' && (
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          {heroStandalones.length === 0 ? (
+            <div style={{fontSize:11, color:'var(--text-muted)', fontStyle:'italic', padding:6}}>
+              No hay heros sueltos. Crea uno primero en <strong>Bloques sueltos</strong>.
+            </div>
+          ) : (
+            <>
+              <div style={{fontSize:10, color:'var(--text-subtle)', fontWeight:600, letterSpacing:0.3}}>Hero source:</div>
+              <select
+                className="select"
+                value={block._sourceId || ''}
+                onChange={e => onUpdate({ standaloneId: e.target.value, _sourceType: 'standalone', _sourceId: e.target.value })}
+              >
+                <option value="">— Selecciona un hero —</option>
+                {heroStandalones.map(h => <option key={h.id} value={h.id}>{h.title || h.id}</option>)}
+              </select>
+              {heroSource && (
+                <div style={{fontSize:11, color:'var(--text-muted)', padding:'4px 0', lineHeight:1.5}}>
+                  → "<strong>{heroSource.config?.heroTitle || heroSource.title}</strong>"<br/>
+                  <span style={{fontSize:10, fontStyle:'italic'}}>Edita los detalles del hero desde "Bloques sueltos" o desde el composer al insertarlo en el lienzo.</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {block.type === 'cta' && (
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          <input className="input" value={block.text || ''} placeholder="Texto del botón" onChange={e => onUpdate({ text: e.target.value })} style={{fontSize:12}} />
+          <input className="input" value={block.url || ''} placeholder="https://…" onChange={e => onUpdate({ url: e.target.value })} style={{fontSize:11, fontFamily:'var(--font-mono)'}} />
+          <div style={{display:'grid', gridTemplateColumns:'auto 1fr auto 1fr 1fr', gap:6, alignItems:'center'}}>
+            <span style={{fontSize:10, color:'var(--text-subtle)'}}>Fondo</span>
+            <input type="color" value={block.bg || '#1d4ed8'} onChange={e => onUpdate({ bg: e.target.value })} style={{height:28, padding:2}} />
+            <span style={{fontSize:10, color:'var(--text-subtle)'}}>Texto</span>
+            <input type="color" value={block.color || '#ffffff'} onChange={e => onUpdate({ color: e.target.value })} style={{height:28, padding:2}} />
+            <select className="select" value={block.align || 'center'} onChange={e => onUpdate({ align: e.target.value })} style={{fontSize:11}}>
+              <option value="left">Izq.</option>
+              <option value="center">Centro</option>
+              <option value="right">Der.</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {block.type === 'pimpam_steps' && (
         <div style={{fontSize:11, color:'var(--text-muted)', fontStyle:'italic', padding:6}}>
           Edita los detalles de este bloque desde el editor del composer (al insertarlo en el lienzo).
         </div>
       )}
+
+      {block.type === 'section' && (() => {
+        const cols = Array.isArray(block.columns) ? block.columns : [];
+        return (
+          <div style={{display:'flex', flexDirection:'column', gap:8}}>
+            <div style={{display:'grid', gridTemplateColumns: cols.length === 3 ? '1fr 1fr 1fr' : '1fr 1fr', gap:8}}>
+              {cols.map((col, ci) => (
+                <div key={ci} style={{
+                  background:'var(--bg-sunken)', border:'1px dashed var(--border-strong)',
+                  borderRadius:'var(--r-sm)', padding:8,
+                }}>
+                  <div style={{fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text-subtle)', textTransform:'uppercase', letterSpacing:1, marginBottom:6}}>
+                    Col {ci + 1}
+                  </div>
+                  <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                    {(col.blocks || []).length === 0 && (
+                      <div style={{fontSize:10, color:'var(--text-subtle)', fontStyle:'italic', padding:'4px 0'}}>Vacía</div>
+                    )}
+                    {(col.blocks || []).map((cb, ii) => (
+                      <ComposedChildEditor
+                        key={ii}
+                        block={cb}
+                        index={ii}
+                        total={(col.blocks || []).length}
+                        lang={lang}
+                        onUpdate={(patch) => updateSectionChild(ci, ii, patch)}
+                        onRemove={() => removeSectionChild(ci, ii)}
+                        onMove={(dir) => moveSectionChild(ci, ii, dir)}
+                      />
+                    ))}
+                  </div>
+                  <div style={{display:'flex', flexWrap:'wrap', gap:4, marginTop:6}}>
+                    <button className="btn btn-ghost" style={{fontSize:10, padding:'2px 6px'}} onClick={() => addSectionChild(ci, 'text')}>+ Texto</button>
+                    <button className="btn btn-ghost" style={{fontSize:10, padding:'2px 6px'}} onClick={() => addSectionChild(ci, 'product_single')}>+ Producto</button>
+                    <button className="btn btn-ghost" style={{fontSize:10, padding:'2px 6px'}} onClick={() => addSectionChild(ci, 'image')}>+ Imagen</button>
+                    <button className="btn btn-ghost" style={{fontSize:10, padding:'2px 6px'}} onClick={() => addSectionChild(ci, 'cta')}>+ CTA</button>
+                    <button className="btn btn-ghost" style={{fontSize:10, padding:'2px 6px'}} onClick={() => addSectionChild(ci, 'video')}>+ Vídeo</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
