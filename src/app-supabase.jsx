@@ -7,7 +7,7 @@ const SUPABASE_ROW_ID = 'main'
 const STORAGE_KEY = 'bomedia_composer_data'
 const DRAFT_KEY = 'bomedia_draft_blocks'
 
-function supabaseFetch(method, body) {
+function supabaseFetch(method, body, signal) {
   let url = SUPABASE_URL + '/rest/v1/' + SUPABASE_TABLE + '?id=eq.' + SUPABASE_ROW_ID
   const opts = {
     method,
@@ -23,6 +23,7 @@ function supabaseFetch(method, body) {
     delete opts.headers['Prefer']
   }
   if (body) opts.body = JSON.stringify(body)
+  if (signal) opts.signal = signal
   return fetch(url, opts)
 }
 
@@ -38,10 +39,39 @@ function loadFromSupabase() {
     .catch(() => null)
 }
 
+/* Estado privado del módulo para resolver el race de guardados:
+   - `_inFlightController`: AbortController del PATCH actualmente en vuelo
+   - `_saveSeq`: número de secuencia incremental — solo el último gana
+   El debouncer del App ya cancela timers pendientes, pero esto NO ayudaba
+   con guardados ya despachados al servidor: si el PATCH A (datos viejos)
+   tarda 3s y B (datos nuevos) sale en t=1.6s y termina antes que A, A
+   pisa la nube con datos antiguos. Ahora cancelamos A en cuanto sale B. */
+let _inFlightSaveController = null
+let _saveSeq = 0
+
 function saveToSupabase(data) {
-  return supabaseFetch('PATCH', { data, updated_at: new Date().toISOString() })
-    .then(() => true)
-    .catch(() => false)
+  // Aborta cualquier guardado anterior en vuelo. El fetch cancelado
+  // resolverá con error AbortError que silenciamos abajo.
+  if (_inFlightSaveController) {
+    try { _inFlightSaveController.abort() } catch (e) {}
+  }
+  const controller = (typeof AbortController === 'function') ? new AbortController() : null
+  _inFlightSaveController = controller
+  const mySeq = ++_saveSeq
+  return supabaseFetch('PATCH', { data, updated_at: new Date().toISOString() }, controller && controller.signal)
+    .then(() => {
+      // Si entre tanto se ha lanzado otro save, este resultado es viejo;
+      // descartamos su éxito (irrelevante — el último marca el estado).
+      if (mySeq !== _saveSeq) return false
+      if (_inFlightSaveController === controller) _inFlightSaveController = null
+      return true
+    })
+    .catch(err => {
+      // AbortError es esperado cuando se solapa otro save — no es un fallo real.
+      if (err && (err.name === 'AbortError' || /aborted/i.test(err.message || ''))) return false
+      if (_inFlightSaveController === controller) _inFlightSaveController = null
+      return false
+    })
 }
 
 function supabaseBackupFetch(method, rowId, body) {

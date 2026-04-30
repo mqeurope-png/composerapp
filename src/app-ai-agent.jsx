@@ -656,15 +656,22 @@ const agentTools = [
 
   {
     name: 'load_template',
-    description: 'Replace the canvas with the blocks from a saved template. Destructive (clears the current canvas first).',
+    description: 'Replace the canvas with the blocks from a saved template. DESTRUCTIVE — clears the current canvas first. Only call this if the user EXPLICITLY asks to load a template (e.g. "abre la plantilla X", "carga la plantilla Y", "úsame la plantilla Z"). Never call it as a guess or to "start fresh" without explicit user request. Requires confirmed:true.',
     parameters: {
       type: 'object',
       properties: {
         templateId: { type: 'string' },
+        confirmed: { type: 'boolean', description: 'Set to true only when the user explicitly asked to load this template. If you would also wipe pre-existing user content, double-check the user wanted that.' },
       },
       required: ['templateId'],
     },
     execute: (args, w, ctx) => {
+      // Defensive gate: same pattern as clear_canvas. Sin esto, el modelo
+      // cargaba plantillas como side-effect ("para empezar de cero…")
+      // pisando el trabajo del usuario sin confirmación.
+      if (args && args.confirmed !== true) {
+        return JSON.stringify({ ok: false, error: 'load_template requiere confirmed:true. Es destructivo (vacía el canvas actual). Solo llámalo si el user pidió EXPLÍCITAMENTE cargar esa plantilla. Si dudas, pregunta antes.' })
+      }
       const t = ((ctx.appState && ctx.appState.templates) || []).find(x => x.id === args.templateId)
       if (!t) return JSON.stringify({ ok: false, error: 'Template not found: ' + args.templateId })
       // Use the live expandTemplate helper if available; otherwise manual expansion
@@ -676,8 +683,9 @@ const agentTools = [
       } else if (Array.isArray(t.blocks)) {
         expanded = t.blocks.map(ref => ({ id: _agentMkId(), type: 'text', textId: ref }))
       }
+      const previousCount = w.blocks.length
       w.blocks = expanded.map(b => Object.assign({}, b, b.id ? {} : { id: _agentMkId() }))
-      return JSON.stringify({ ok: true, template: t.name, blockCount: w.blocks.length })
+      return JSON.stringify({ ok: true, template: t.name, blockCount: w.blocks.length, replacedBlocks: previousCount })
     },
   },
 

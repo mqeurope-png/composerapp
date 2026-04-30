@@ -10,13 +10,27 @@ function productCardHtml(p, lang) {
   // Sizes rebalanced 2026-04: image bumped to 220×170 (was 160×130) and
   // text sizes increased one step so they read at a comfortable 11-12px
   // body. Button padding reduced slightly so it doesn't dominate the card.
+  // Apr 2026: escape every user-controlled string with escapeHtml so a
+  // product name like "Tom & Jerry < Best" or a link with `"` doesn't
+  // break the HTML/attributes. Color/CSS values stay raw — only edited
+  // by admin from BO color pickers, not free-text.
   const areaLabel = lang==='fr'?'Surface':lang==='de'?'Fläche':lang==='en'?'Area':lang==='nl'?'Oppervlak':'Área'
   const altLabel = lang==='fr'?'Haut. max.':lang==='de'?'Max. Höhe':lang==='en'?'Max. height':lang==='nl'?'Max. hoogte':'Alt. máx.'
+  const eName = escapeHtml(p.name)
+  const eDesc = escapeHtml(p.desc)
+  const eFeat1 = escapeHtml(p.feat1)
+  const eFeat2 = escapeHtml(p.feat2)
+  const eBadge = escapeHtml(p.badge)
+  const eArea = escapeHtml(p.area)
+  const eAlt = escapeHtml(p.alt)
+  const ePrice = escapeHtml(p.price)
+  const eImg = escapeHtml(p.img || '')
+  const eLink = escapeHtml(p.link || '')
   let areaBlock = ''
   if (p.area !== '-') {
     areaBlock = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0">' +
-      '<tr><td width="38%" style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + areaLabel + '</td><td style="font-size:11px;font-weight:700;color:#334155">' + p.area + '</td></tr>' +
-      (p.alt !== '-' ? '<tr><td style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + altLabel + '</td><td style="font-size:11px;font-weight:700;color:#334155">' + p.alt + '</td></tr>' : '') +
+      '<tr><td width="38%" style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + areaLabel + '</td><td style="font-size:11px;font-weight:700;color:#334155">' + eArea + '</td></tr>' +
+      (p.alt !== '-' ? '<tr><td style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + altLabel + '</td><td style="font-size:11px;font-weight:700;color:#334155">' + eAlt + '</td></tr>' : '') +
       '</table>'
   }
   const priceExtra = p.price !== 'Consultar' && p.price !== 'Sur demande' && p.price !== 'Auf Anfrage' && p.price !== 'On request' && p.price !== 'Op aanvraag' ? ' <span style="font-size:11px;font-weight:500;color:#475569">' + (lang==='fr'?'+ TVA':lang==='de'?'+ MwSt':lang==='en'?'+ VAT':lang==='nl'?'+ BTW':'+ IVA') + '</span>' : ''
@@ -26,30 +40,41 @@ function productCardHtml(p, lang) {
     '<tr><td style="background:#fff;padding:8px 4px 4px;border-bottom:1px solid ' + (p.brand==='pimpam'?'#ffedd5':'#f1f5f9') + ';text-align:center">' +
     // Image fills the entire column. No max-width caps so it grows with the
     // card; height stays proportional via height:auto.
-    '<img src="' + p.img + '" alt="' + p.name + '" style="display:block;width:100%;max-width:100%;height:auto;border-radius:8px">' +
+    '<img src="' + eImg + '" alt="' + eName + '" style="display:block;width:100%;max-width:100%;height:auto;border-radius:8px">' +
     '</td></tr>' +
     '<tr><td style="padding:14px' + bgExtra + '">' +
-    '<span style="display:inline-block;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px;margin-bottom:8px;background:' + p.badgeBg + ';color:' + p.badgeColor + '">' + p.badge + '</span>' +
-    '<p style="font-size:15px;font-weight:900;color:#0f172a;margin:0;line-height:1.3">' + p.name + '</p>' +
-    '<p style="font-size:12px;color:#64748b;margin:5px 0 0;line-height:1.5">' + p.desc + '</p>' +
+    '<span style="display:inline-block;font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px;margin-bottom:8px;background:' + p.badgeBg + ';color:' + p.badgeColor + '">' + eBadge + '</span>' +
+    '<p style="font-size:15px;font-weight:900;color:#0f172a;margin:0;line-height:1.3">' + eName + '</p>' +
+    '<p style="font-size:12px;color:#64748b;margin:5px 0 0;line-height:1.5">' + eDesc + '</p>' +
     areaBlock +
-    '<p style="font-size:11px;color:#475569;padding:2px 0;margin:' + (p.area==='-'?'8px':'0') + ' 0 0">✓ ' + p.feat1 + '</p>' +
-    '<p style="font-size:11px;color:#475569;padding:2px 0;margin:0">✓ ' + p.feat2 + '</p>' +
-    '<p style="font-size:16px;font-weight:900;color:' + p.accent + ';margin:10px 0 0;text-align:center">' + p.price + priceExtra + '</p>' +
-    '<a href="' + p.link + '" style="display:block;text-align:center;font-size:12px;font-weight:700;text-decoration:none;padding:8px 10px;border-radius:8px;text-transform:uppercase;letter-spacing:0.4px;background:' + p.gradient + ';color:#fff;margin-top:8px">' + ctaLabel + ' →</a>' +
+    '<p style="font-size:11px;color:#475569;padding:2px 0;margin:' + (p.area==='-'?'8px':'0') + ' 0 0">✓ ' + eFeat1 + '</p>' +
+    '<p style="font-size:11px;color:#475569;padding:2px 0;margin:0">✓ ' + eFeat2 + '</p>' +
+    '<p style="font-size:16px;font-weight:900;color:' + p.accent + ';margin:10px 0 0;text-align:center">' + ePrice + priceExtra + '</p>' +
+    '<a href="' + eLink + '" style="display:block;text-align:center;font-size:12px;font-weight:700;text-decoration:none;padding:8px 10px;border-radius:8px;text-transform:uppercase;letter-spacing:0.4px;background:' + p.gradient + ';color:#fff;margin-top:8px">' + ctaLabel + ' →</a>' +
     '</td></tr></table>'
 }
 
 function productCardCompactHtml(p, lang) {
   // Compact (trio) — same rebalance applied at smaller scale: image 160×120
   // (was 120×90), text 9-13px (was 7-11), button slightly less heavy.
+  // escapeHtml en todos los strings free-text (mismo motivo que la versión grande).
   const areaLabel = lang==='fr'?'Surface':lang==='de'?'Fläche':lang==='en'?'Area':lang==='nl'?'Oppervlak':'Área'
   const altLabel = lang==='fr'?'Haut.':lang==='de'?'Höhe':lang==='en'?'Height':lang==='nl'?'Hoogte':'Alt'
+  const eName = escapeHtml(p.name)
+  const eDesc = escapeHtml(p.desc)
+  const eFeat1 = escapeHtml(p.feat1)
+  const eFeat2 = escapeHtml(p.feat2)
+  const eBadge = escapeHtml(p.badge)
+  const eArea = escapeHtml(p.area)
+  const eAlt = escapeHtml(p.alt)
+  const ePrice = escapeHtml(p.price)
+  const eImg = escapeHtml(p.img || '')
+  const eLink = escapeHtml(p.link || '')
   let areaBlock = ''
   if (p.area !== '-') {
     areaBlock = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0">' +
-      '<tr><td style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + areaLabel + ': ' + p.area + '</td></tr>' +
-      (p.alt !== '-' ? '<tr><td style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + altLabel + ': ' + p.alt + '</td></tr>' : '') +
+      '<tr><td style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + areaLabel + ': ' + eArea + '</td></tr>' +
+      (p.alt !== '-' ? '<tr><td style="font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase">' + altLabel + ': ' + eAlt + '</td></tr>' : '') +
       '</table>'
   }
   const priceExtra = p.price !== 'Consultar' && p.price !== 'Sur demande' && p.price !== 'Auf Anfrage' && p.price !== 'On request' && p.price !== 'Op aanvraag' ? ' <span style="font-size:9px;font-weight:500;color:#475569">(' + (lang==='fr'?'+ TVA':lang==='de'?'+ MwSt':lang==='en'?'+ VAT':lang==='nl'?'+ BTW':'+ IVA') + ')</span>' : ''
@@ -57,17 +82,17 @@ function productCardCompactHtml(p, lang) {
   const bgExtra = p.brand === 'pimpam' ? ';background:#fff7ed' : ''
   return '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ' + (p.brand==='pimpam'?'#fed7aa':'#e2e8f0') + ';border-radius:10px;overflow:hidden;background:#fff">' +
     '<tr><td style="background:#fff;padding:6px 3px 3px;border-bottom:1px solid ' + (p.brand==='pimpam'?'#ffedd5':'#f1f5f9') + ';text-align:center">' +
-    '<img src="' + p.img + '" alt="' + p.name + '" style="display:block;width:100%;max-width:100%;height:auto;border-radius:6px">' +
+    '<img src="' + eImg + '" alt="' + eName + '" style="display:block;width:100%;max-width:100%;height:auto;border-radius:6px">' +
     '</td></tr>' +
     '<tr><td style="padding:10px' + bgExtra + '">' +
-    '<span style="display:inline-block;font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:16px;margin-bottom:4px;background:' + p.badgeBg + ';color:' + p.badgeColor + '">' + p.badge + '</span>' +
-    '<p style="font-size:13px;font-weight:900;color:#0f172a;margin:0;line-height:1.3">' + p.name + '</p>' +
-    '<p style="font-size:10px;color:#64748b;margin:3px 0 0;line-height:1.4">' + p.desc + '</p>' +
+    '<span style="display:inline-block;font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:16px;margin-bottom:4px;background:' + p.badgeBg + ';color:' + p.badgeColor + '">' + eBadge + '</span>' +
+    '<p style="font-size:13px;font-weight:900;color:#0f172a;margin:0;line-height:1.3">' + eName + '</p>' +
+    '<p style="font-size:10px;color:#64748b;margin:3px 0 0;line-height:1.4">' + eDesc + '</p>' +
     areaBlock +
-    '<p style="font-size:10px;color:#475569;padding:1px 0;margin:' + (p.area==='-'?'6px':'0') + ' 0 0">✓ ' + p.feat1 + '</p>' +
-    '<p style="font-size:10px;color:#475569;padding:1px 0;margin:0">✓ ' + p.feat2 + '</p>' +
-    '<p style="font-size:13px;font-weight:900;color:' + p.accent + ';margin:8px 0 0;text-align:center">' + p.price + priceExtra + '</p>' +
-    '<a href="' + p.link + '" style="display:block;text-align:center;font-size:10px;font-weight:700;text-decoration:none;padding:7px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.3px;background:' + p.gradient + ';color:#fff;margin-top:6px">' + ctaLabel + ' →</a>' +
+    '<p style="font-size:10px;color:#475569;padding:1px 0;margin:' + (p.area==='-'?'6px':'0') + ' 0 0">✓ ' + eFeat1 + '</p>' +
+    '<p style="font-size:10px;color:#475569;padding:1px 0;margin:0">✓ ' + eFeat2 + '</p>' +
+    '<p style="font-size:13px;font-weight:900;color:' + p.accent + ';margin:8px 0 0;text-align:center">' + ePrice + priceExtra + '</p>' +
+    '<a href="' + eLink + '" style="display:block;text-align:center;font-size:10px;font-weight:700;text-decoration:none;padding:7px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.3px;background:' + p.gradient + ';color:#fff;margin-top:6px">' + ctaLabel + ' →</a>' +
     '</td></tr></table>'
 }
 
@@ -171,11 +196,31 @@ function pimpamHeroHtml(config, lang) {
   const ctaUrl = (hi && hi.heroCtaUrl) || cfg.heroCtaUrl || ''
   const bgColor = cfg.heroBgColor || '#fff'
 
+  // Detectar fondo oscuro para invertir colores de texto. Antes solo
+  // soportaba #rrggbb estricto — falló para #fff (3 chars), rgb()/rgba(),
+  // y nombres CSS como "black"/"transparent". Ahora cubrimos las cuatro
+  // formas comunes; cualquier valor irreconocible cae en isDark=false
+  // (asume fondo claro, texto oscuro — comportamiento anterior).
   let isDark = false
-  const hexMatch = bgColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i)
-  if (hexMatch) {
-    const r = parseInt(hexMatch[1],16), g = parseInt(hexMatch[2],16), bv = parseInt(hexMatch[3],16)
-    isDark = (r*0.299 + g*0.587 + bv*0.114) < 128
+  const _luminance = (r, g, b) => (r*0.299 + g*0.587 + b*0.114)
+  const bgRaw = String(bgColor || '').trim()
+  // hex 6 chars: #rrggbb
+  let m = bgRaw.match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i)
+  if (m) {
+    isDark = _luminance(parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)) < 128
+  } else if ((m = bgRaw.match(/^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i))) {
+    // hex 3 chars: #rgb → cada char duplicado
+    isDark = _luminance(parseInt(m[1]+m[1],16), parseInt(m[2]+m[2],16), parseInt(m[3]+m[3],16)) < 128
+  } else if ((m = bgRaw.match(/^rgba?\s*\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)/i))) {
+    // rgb()/rgba() — ignoramos el alpha; si es totalmente transparente el
+    // fondo del email lo determina el wrapper (blanco), así que isDark=false
+    // es correcto. Si quieren un alpha bajo sobre oscuro tendrán que usar hex.
+    isDark = _luminance(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])) < 128
+  } else {
+    // Nombres CSS comunes — solo los suficientemente oscuros donde el
+    // texto blanco tiene sentido. Cualquier otro nombre cae en false.
+    const darkNames = ['black','navy','maroon','darkblue','darkred','darkgreen','darkslategray','midnightblue','indigo','purple','brown']
+    if (darkNames.includes(bgRaw.toLowerCase())) isDark = true
   }
   const titleColor = isDark ? '#ffffff' : '#0f172a'
   const subColor = isDark ? '#94a3b8' : '#64748b'
@@ -699,6 +744,16 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
       case 'cta':
       case 'divider': {
         out.push(Object.assign({}, b))
+        break
+      }
+      // Compat: divider_line/short/dots pueden llegar literales desde
+      // datos guardados con factories antiguos. Los renormalizamos al
+      // shape canónico {type:'divider', style:…} que el renderer entiende.
+      case 'divider_line':
+      case 'divider_short':
+      case 'divider_dots': {
+        const style = b.type === 'divider_short' ? 'short' : b.type === 'divider_dots' ? 'dots' : 'line'
+        out.push(Object.assign({}, b, { type: 'divider', style }))
         break
       }
 

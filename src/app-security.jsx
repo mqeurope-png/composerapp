@@ -14,13 +14,26 @@ function sha256Hash(str) {
 
 function sanitizeHtml(html) {
   if (!html) return ''
+  // Scripts y handlers inline
   html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
   html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
   html = html.replace(/(href|src|action)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/gi, '$1=""')
   html = html.replace(/src\s*=\s*(?:"data:[^"]*"|'data:[^']*')/gi, 'src=""')
+  // Embeds que pueden ejecutar
   html = html.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
   html = html.replace(/<iframe\b[^>]*\/?>/gi, '')
   html = html.replace(/<(?:object|embed)\b[^>]*\/?>/gi, '')
+  // <style> en rich HTML pegado por el user puede pisar el CSS del email
+  // entero (ej: body{display:none}) o ejecutar @import a recursos externos.
+  // El email-gen tiene su propio CSS_BLOCK a nivel de documento — los
+  // bloques de texto NO necesitan <style>. Apr 2026.
+  html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+  html = html.replace(/<style\b[^>]*\/?>/gi, '')
+  // <link rel=stylesheet> idem — carga CSS externo en el iframe del preview
+  // y filtra info de caché. <base> permitiría redirigir todos los enlaces
+  // relativos a un dominio hostil. <meta http-equiv=refresh> permite
+  // redirección temporizada.
+  html = html.replace(/<(?:link|base|meta)\b[^>]*\/?>/gi, '')
   return html
 }
 

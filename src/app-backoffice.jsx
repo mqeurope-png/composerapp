@@ -529,6 +529,30 @@ function BackofficeDrawer({ editing, appState, onClose, onSave }) {
   const { kind, item } = editing;
   const [lang, setLang] = React.useState('es');
   const [data, setData] = React.useState(item);
+
+  // Track de cambios sin guardar — comparación shallow JSON entre el `data`
+  // en curso y el `item` original. Se evalúa en cada render: barato porque
+  // los items rara vez son enormes (un template con 50 bloques son ~30KB
+  // de JSON). El close handler usa esto para mostrar `confirm()` cuando
+  // el user va a perder cambios. Antes click fuera del drawer / X / Esc /
+  // overlay descartaban silenciosamente todo lo tipeado.
+  const dirty = React.useMemo(() => {
+    try { return JSON.stringify(data) !== JSON.stringify(item); }
+    catch (e) { return true; }
+  }, [data, item]);
+  const guardedClose = React.useCallback(() => {
+    if (dirty) {
+      const ok = window.confirm('Tienes cambios sin guardar.\n\n¿Cerrar y descartarlos?');
+      if (!ok) return;
+    }
+    onClose();
+  }, [dirty, onClose]);
+  // Esc también pasa por el guardado.
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') guardedClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [guardedClose]);
   // Para que el preview en vivo refleje los compositorBlocks RECIÉN
   // editados, "inyectamos" el data en curso en una copia del appState
   // antes de pasarla al BoEditPreviewPane. Sin esto, el preview leería
@@ -579,12 +603,15 @@ function BackofficeDrawer({ editing, appState, onClose, onSave }) {
 
   return (
     <>
-      <div className="bo-drawer-overlay" onClick={onClose} />
+      <div className="bo-drawer-overlay" onClick={guardedClose} />
       <div className={'bo-drawer' + (isWide ? ' wide' : '')} onClick={e => e.stopPropagation()}>
         <div className="bo-drawer-header">
           <div style={{flex:1, minWidth:0}}>
             <div style={{fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.1em', color:'var(--text-muted)', marginBottom:4}}>{titleByKind[kind]}</div>
-            <div className="bo-drawer-title">{data.name || data.label || data.title}</div>
+            <div className="bo-drawer-title">
+              {data.name || data.label || data.title}
+              {dirty && <span style={{marginLeft:10, fontSize:11, fontWeight:600, color:'var(--accent)', fontStyle:'normal', letterSpacing:0.5}} title="Hay cambios sin guardar">●</span>}
+            </div>
           </div>
           {showLangPill && (
             <div className="lang-pill">
@@ -593,7 +620,7 @@ function BackofficeDrawer({ editing, appState, onClose, onSave }) {
               ))}
             </div>
           )}
-          <button className="icon-btn" onClick={onClose}><Icon name="x" size={16}/></button>
+          <button className="icon-btn" onClick={guardedClose}><Icon name="x" size={16}/></button>
         </div>
 
         {isWide ? (
@@ -637,7 +664,7 @@ function BackofficeDrawer({ editing, appState, onClose, onSave }) {
           <button className="btn btn-ghost danger" style={{color:'var(--danger)', marginRight:'auto'}}>
             <Icon name="trash" size={13}/> Eliminar
           </button>
-          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-ghost" onClick={guardedClose}>Cancelar</button>
           <button className="btn btn-primary" onClick={() => onSave ? onSave(kind, data) : onClose()}>
             <Icon name="zap" size={13}/> Guardar cambios
           </button>
@@ -1127,9 +1154,12 @@ function CompositorBlocksListEditor({ compBlocks, setCompBlocks, lang, label, de
       product_pair: () => ({ type: 'product_pair', product1: '', product2: '' }),
       product_trio: () => ({ type: 'product_trio', product1: '', product2: '', product3: '' }),
       image: () => ({ type: 'image', src: '', alt: '', align: 'center', widthPct: 100 }),
-      divider_line: () => ({ type: 'divider_line' }),
-      divider_short: () => ({ type: 'divider_short' }),
-      divider_dots: () => ({ type: 'divider_dots' }),
+      // Dividers: el renderer (dividerBlockHtml) espera type:'divider' +
+      // style:'line/short/dots'. Antes el factory escribía type:'divider_line'
+      // literal y caían a default: en el bridge, sin renderizar. Bug fix.
+      divider_line: () => ({ type: 'divider', style: 'line', color: '#e2e8f0', paddingV: 24 }),
+      divider_short: () => ({ type: 'divider', style: 'short', color: '#cbd5e1', paddingV: 32 }),
+      divider_dots: () => ({ type: 'divider', style: 'dots', color: '#94a3b8', paddingV: 28 }),
       video: () => ({ type: 'video', youtubeUrl: '' }),
       pimpam_hero: () => defaultHero
         ? { type: 'pimpam_hero', standaloneId: defaultHero.id, _sourceType: 'standalone', _sourceId: defaultHero.id }
@@ -1203,41 +1233,45 @@ function CompositorBlocksListEditor({ compBlocks, setCompBlocks, lang, label, de
    100% fiel. Toggle desktop/mobile + abrir en pestaña nueva. */
 function BoEditPreviewPane({ blocks, appState, lang }) {
   const [device, setDevice] = React.useState('desktop');
-  const iframeRef = React.useRef(null);
-  // Compute HTML on every change of blocks/lang/appState. renderEmailHtml
-  // expects v3 blocks — compositorBlocks is exactly that.
+  // Debounce: el render del HTML se recalcula 250ms tras dejar de tipear
+  // en vez de en cada keystroke. Antes el iframe parpadeaba en blanco
+  // entre cada tecla con plantillas grandes (8+ bloques con imágenes)
+  // porque doc.write se ejecutaba sincrónico en cada cambio. Ahora con
+  // srcDoc + debounce, el iframe se actualiza solo cuando hay una pausa.
+  // Apr 2026 audit fix.
+  const debouncedDeps = useDebounced({ blocks, appState, lang }, 250);
   const html = React.useMemo(() => {
     const fn = (typeof window !== 'undefined' && window.renderEmailHtml) || (typeof renderEmailHtml === 'function' ? renderEmailHtml : null);
     if (fn) {
       try {
-        return fn(blocks || [], appState || {}, lang || 'es');
+        return fn(debouncedDeps.blocks || [], debouncedDeps.appState || {}, debouncedDeps.lang || 'es');
       } catch (e) {
         return '<html><body style="padding:20px;font-family:system-ui;color:#dc2626">Error al renderizar: ' + (e.message || e) + '</body></html>';
       }
     }
-    return '<html><body><pre>' + JSON.stringify(blocks, null, 2) + '</pre></body></html>';
-  }, [blocks, appState, lang]);
+    return '<html><body><pre>' + JSON.stringify(debouncedDeps.blocks, null, 2) + '</pre></body></html>';
+  }, [debouncedDeps.blocks, debouncedDeps.appState, debouncedDeps.lang]);
 
-  React.useEffect(() => {
-    const f = iframeRef.current;
-    if (!f) return;
-    const doc = f.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(html);
-    doc.close();
-  }, [html]);
+  // Indicador "actualizando…" si el debounce está pendiente: comparamos
+  // los deps actuales con los debounced — si difieren, hay edits in flight.
+  const updating = blocks !== debouncedDeps.blocks
+    || appState !== debouncedDeps.appState
+    || lang !== debouncedDeps.lang;
 
+  // Para abrir en pestaña nueva usamos el HTML actual (no el debounced) —
+  // el user pulsa el botón porque quiere ver el resultado AHORA.
   const openInNewTab = () => {
+    const fn = (typeof window !== 'undefined' && window.renderEmailHtml) || null;
+    const liveHtml = fn ? fn(blocks || [], appState || {}, lang || 'es') : html;
     const w = window.open('about:blank', '_blank');
-    if (w) { w.document.write(html); w.document.close(); }
+    if (w) { w.document.write(liveHtml); w.document.close(); }
   };
 
   return (
     <div style={{display:'flex', flexDirection:'column', height:'100%', background:'var(--bg-sunken)'}}>
       <div style={{padding:'10px 14px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, background:'var(--bg-panel)'}}>
         <Icon name="eye" size={13}/>
-        <strong style={{fontSize:12, flex:1}}>Preview en vivo</strong>
+        <strong style={{fontSize:12, flex:1}}>Preview en vivo {updating && <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400, marginLeft:4}}>· actualizando…</span>}</strong>
         <span className="mono" style={{fontSize:10, color:'var(--text-subtle)'}}>{(blocks || []).length} bloques · {(lang || 'es').toUpperCase()}</span>
         <div className="device-toggle">
           <button className={'icon-btn' + (device === 'desktop' ? ' active' : '')} onClick={() => setDevice('desktop')} title="Desktop">
@@ -1257,9 +1291,13 @@ function BoEditPreviewPane({ blocks, appState, lang }) {
             Añade bloques en el editor de la izquierda · el preview se actualiza en vivo.
           </div>
         ) : (
+          /* sandbox="" + srcDoc: contiene scripts y styles maliciosos que
+             se hayan colado por sanitizeHtml; el iframe queda como origen
+             único opaco sin acceso a localStorage/Supabase del padre. */
           <iframe
-            ref={iframeRef}
             title="Preview email"
+            srcDoc={html}
+            sandbox=""
             style={{
               width: device === 'mobile' ? 380 : '100%',
               maxWidth: device === 'mobile' ? 380 : 720,
@@ -1274,6 +1312,18 @@ function BoEditPreviewPane({ blocks, appState, lang }) {
       </div>
     </div>
   );
+}
+
+/* Hook genérico de debounce de un valor — devuelve el valor "asentado"
+   tras `delay` ms de inactividad. Lo usamos para evitar recalcular el
+   HTML del preview en cada keystroke. */
+function useDebounced(value, delay) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
 }
 
 /* Editor for composedBlocks — desde v5 los compuestos son una agrupación
@@ -1369,9 +1419,12 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
     product_pair: '2 productos',
     product_trio: '3 productos',
     image: 'Imagen',
+    // Tipos divider_* legacy se siguen reconociendo por si un dato viejo
+    // los trae así. El nuevo schema es type:'divider' + style.
     divider_line: 'Divisor · línea',
     divider_short: 'Divisor · línea corta',
     divider_dots: 'Divisor · puntos',
+    divider: 'Divisor · ' + (block.style === 'short' ? 'línea corta' : block.style === 'dots' ? 'puntos' : 'línea'),
     video: 'Vídeo',
     freebird: 'Vídeo',
     pimpam_hero: 'Hero',
@@ -1471,7 +1524,9 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
       product_single: () => ({ type: 'product_single', product1: '' }),
       image: () => ({ type: 'image', src: '', alt: '', align: 'center', widthPct: 100 }),
       cta: () => ({ type: 'cta', text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center' }),
-      divider_line: () => ({ type: 'divider_line' }),
+      // Mismo fix de dividers que en el factory padre — emite el shape
+      // canónico que dividerBlockHtml renderiza.
+      divider_line: () => ({ type: 'divider', style: 'line', color: '#e2e8f0', paddingV: 24 }),
       video: () => ({ type: 'video', youtubeUrl: '' }),
     };
     const f = colFactory[kind];
@@ -1613,16 +1668,25 @@ function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, on
         </div>
       )}
 
-      {(block.type === 'divider_line' || block.type === 'divider_short' || block.type === 'divider_dots') && (
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
-          <select className="select" value={block.type} onChange={e => onUpdate({ type: e.target.value })}>
-            <option value="divider_line">Línea fina</option>
-            <option value="divider_short">Línea corta</option>
-            <option value="divider_dots">Puntos</option>
-          </select>
-          <input className="input" type="color" value={block.color || '#e2e8f0'} onChange={e => onUpdate({ color: e.target.value })} style={{padding:2, height:30}} />
-        </div>
-      )}
+      {(block.type === 'divider' || block.type === 'divider_line' || block.type === 'divider_short' || block.type === 'divider_dots') && (() => {
+        // Resolver el style canónico: si el bloque es type:'divider' lee block.style;
+        // si es legacy type:'divider_line' lo derivamos de la parte tras el guión bajo.
+        const currentStyle = block.style
+          || (block.type === 'divider_short' ? 'short'
+            : block.type === 'divider_dots' ? 'dots'
+            : 'line');
+        const setStyle = (newStyle) => onUpdate({ type: 'divider', style: newStyle });
+        return (
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+            <select className="select" value={currentStyle} onChange={e => setStyle(e.target.value)}>
+              <option value="line">Línea fina</option>
+              <option value="short">Línea corta</option>
+              <option value="dots">Puntos</option>
+            </select>
+            <input className="input" type="color" value={block.color || '#e2e8f0'} onChange={e => onUpdate({ color: e.target.value })} style={{padding:2, height:30}} />
+          </div>
+        );
+      })()}
 
       {(block.type === 'video' || block.type === 'freebird') && (
         <input className="input" value={block.youtubeUrl || ''} placeholder="https://www.youtube.com/watch?v=…" onChange={e => onUpdate({ youtubeUrl: e.target.value })} style={{fontSize:11, fontFamily:'var(--font-mono)'}} />

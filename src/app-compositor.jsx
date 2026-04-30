@@ -860,6 +860,7 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
                   onUpdate={onUpdate}
                   onDelete={onDelete}
                   onDuplicate={onDuplicate}
+                  onMove={onMove}
                   onUngroup={onUngroup}
                   onOpenInnerPalette={onOpenInnerPalette}
                   onPickColumnAdd={onPickColumnAdd}
@@ -937,12 +938,22 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
             <Icon name="settings" size={12} />
             {selected ? 'Editando' : 'Editar'}
           </button>
-          {!isInner && onMove && (
+          {onMove && (
             <>
-              <button className="block-action" disabled={idx === 0} onClick={e => { e.stopPropagation(); onMove(block.id, -1); }} title="Subir">
+              <button
+                className="block-action"
+                disabled={idx === 0}
+                onClick={e => { e.stopPropagation(); onMove(block.id, -1); }}
+                title={isInner ? 'Subir dentro de la columna' : 'Subir'}
+              >
                 <Icon name="arrowUp" size={13} />
               </button>
-              <button className="block-action" disabled={idx === total - 1} onClick={e => { e.stopPropagation(); onMove(block.id, 1); }} title="Bajar">
+              <button
+                className="block-action"
+                disabled={idx === total - 1}
+                onClick={e => { e.stopPropagation(); onMove(block.id, 1); }}
+                title={isInner ? 'Bajar dentro de la columna' : 'Bajar'}
+              >
                 <Icon name="arrowDown" size={13} />
               </button>
             </>
@@ -1753,7 +1764,6 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, on
 }
 
 function EmailIframe({ html, device }) {
-  const iframeRef = React.useRef(null);
   const wrapperRef = React.useRef(null);
   const [scale, setScale] = React.useState(1);
 
@@ -1763,15 +1773,14 @@ function EmailIframe({ html, device }) {
   // pair/trio columns when the preview panel is narrow.
   const baseWidth = device === 'mobile' ? 380 : 620;
 
-  React.useEffect(() => {
-    const f = iframeRef.current;
-    if (!f) return;
-    const doc = f.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(html || '<html><body></body></html>');
-    doc.close();
-  }, [html]);
+  // sandbox="" + srcdoc → no scripts, no top-nav, origen único opaco. Si
+  // un user inyecta `<script>` o un `<style>body{display:none}` en un texto
+  // (incluso a través de un fallo de sanitizeHtml), se queda contenido en
+  // el iframe sin acceso a localStorage / cookies / Supabase. Antes
+  // usábamos doc.open()+doc.write() que requiere mismo origen — y por
+  // tanto NO podíamos sandboxear el iframe sin perder el render.
+  // Apr 2026 audit fix.
+  const srcDoc = html || '<html><body></body></html>';
 
   React.useEffect(() => {
     const w = wrapperRef.current;
@@ -1785,9 +1794,6 @@ function EmailIframe({ html, device }) {
     return () => ro.disconnect();
   }, [baseWidth]);
 
-  // Outer wrapper measures available width; inner iframe is at native width
-  // and scaled down. We compensate height so the visible area still fills
-  // the panel even when scaled.
   return (
     <div ref={wrapperRef} style={{
       width: '100%',
@@ -1798,8 +1804,9 @@ function EmailIframe({ html, device }) {
       justifyContent: 'center',
     }}>
       <iframe
-        ref={iframeRef}
         title="Email preview"
+        srcDoc={srcDoc}
+        sandbox=""
         style={{
           width: baseWidth + 'px',
           height: (100 / scale) + '%',
@@ -2074,22 +2081,16 @@ function SaveAsTemplateModal({ onClose, onSave, blocksCount }) {
 function EmailPreviewModal({ html, lang, onClose }) {
   const [device, setDevice] = React.useState('desktop');
   const [toast, setToast] = React.useState('');
-  const iframeRef = React.useRef(null);
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2400);
   };
 
-  React.useEffect(() => {
-    const f = iframeRef.current;
-    if (!f) return;
-    const doc = f.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(html || '<html><body></body></html>');
-    doc.close();
-  }, [html]);
+  // sandbox="" + srcdoc → contiene cualquier script o style malicioso que
+  // se haya colado por sanitizeHtml. Sin acceso a localStorage del padre
+  // ni a las claves de Supabase. Apr 2026 audit fix.
+  const srcDoc = html || '<html><body></body></html>';
 
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -2208,8 +2209,9 @@ function EmailPreviewModal({ html, lang, onClose }) {
         </div>
         <div className="preview-modal-body">
           <iframe
-            ref={iframeRef}
             title="Email preview ampliada"
+            srcDoc={srcDoc}
+            sandbox=""
             style={{
               width: width + 'px',
               height: '100%',

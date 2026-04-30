@@ -476,6 +476,19 @@ function App() {
   const blocksToCompositorBlocks = (v3Blocks) => {
     const out = [];
     const texts = appState.prewrittenTexts || [];
+    // Campos de presentación que cualquier bloque puede llevar y que SÍ
+    // queremos persistir en la plantilla. Antes la versión rebuild-from-
+    // scratch del case `text` y `composed` (y la falta de cases `image`/
+    // `cta`/`divider`/`section`) los descartaba — al recargar la plantilla
+    // el formato (rich HTML, ancho, alineación, fontSize, link de imagen,
+    // estilo de divider, columnas de sección…) se evaporaba.
+    const carryMeta = (src, dst) => {
+      // widthPct y blockAlign — afectan al wrapper exterior del bloque
+      if (typeof src.widthPct === 'number') dst.widthPct = src.widthPct;
+      if (src.blockAlign) dst.blockAlign = src.blockAlign;
+      return dst;
+    };
+
     for (const b of (v3Blocks || [])) {
       switch (b.type) {
         case 'text': {
@@ -501,11 +514,23 @@ function App() {
           }
           // 3. Single-shot override
           if (b.overrideText) textEs = b.overrideText;
-          out.push(Object.assign({ type: 'text', text: textEs }, Object.keys(i18n).length ? { i18n } : {}));
+          // Conservar formato/tipografía/anclaje/textId/rich HTML — todos
+          // estos campos los lee el composer/preview al recargar la
+          // plantilla. Sin esto el contenido bold/colored, los anchos
+          // personalizados y la referencia al pre-escrito desaparecían
+          // tras "Guardar como plantilla". Bug fix Apr 2026.
+          const tBlock = Object.assign({ type: 'text', text: textEs }, Object.keys(i18n).length ? { i18n } : {});
+          if (b.textId) tBlock.textId = b.textId;
+          if (b.overridesByLang) tBlock.overridesByLang = Object.assign({}, b.overridesByLang);
+          if (b._richHtml != null) tBlock._richHtml = b._richHtml;
+          if (b._richHtmlByLang) tBlock._richHtmlByLang = Object.assign({}, b._richHtmlByLang);
+          if (b.fontSize) tBlock.fontSize = b.fontSize;
+          if (b.align) tBlock.align = b.align;
+          out.push(carryMeta(b, tBlock));
           break;
         }
         case 'product':
-          if (b.productId) out.push({ type: 'product_single', product1: b.productId });
+          if (b.productId) out.push(carryMeta(b, { type: 'product_single', product1: b.productId }));
           break;
         case 'product_single':
         case 'product_pair':
@@ -518,11 +543,11 @@ function App() {
         case 'brand_pimpam':
         case 'brand_smartjet':
         case 'brand_flux':
-          out.push({ type: 'brand_strip', brand: b.brand || b.type.replace('brand_', '') });
+          out.push(carryMeta(b, { type: 'brand_strip', brand: b.brand || b.type.replace('brand_', '') }));
           break;
         case 'brandstrip': {
           const enabled = b.brands || [];
-          for (const bid of enabled) out.push({ type: 'brand_strip', brand: bid });
+          for (const bid of enabled) out.push(carryMeta(b, { type: 'brand_strip', brand: bid }));
           break;
         }
         case 'pimpam_hero':
@@ -531,9 +556,33 @@ function App() {
         case 'video':
           out.push(Object.assign({}, b, { id: undefined }));
           break;
+        // Image / CTA / divider / section: pasan tal cual (manteniendo
+        // todos sus campos, solo limpiamos id que es interno del canvas).
+        // Antes estos tipos NO tenían case y caían a `default: break`,
+        // borrándose de la plantilla al guardar. Bug fix Apr 2026.
+        case 'image':
+        case 'cta':
+        case 'divider':
+        case 'divider_line':
+        case 'divider_short':
+        case 'divider_dots':
+          out.push(Object.assign({}, b, { id: undefined }));
+          break;
+        case 'section': {
+          // Recursión por columnas — cada columna tiene su propio array
+          // de blocks que también pasamos por blocksToCompositorBlocks
+          // para que sus hijos reciban el mismo trato (preserva todos
+          // los campos, no solo type+brand).
+          const cols = (b.columns || []).map(col => ({
+            blocks: blocksToCompositorBlocks(col.blocks || []),
+          }));
+          out.push(Object.assign({}, b, { id: undefined, columns: cols }));
+          break;
+        }
         case 'composed':
-          // Keep as-is — when this template is loaded, the composed block resolves via its id
-          if (b.composedId) out.push({ type: 'composed', composedId: b.composedId });
+          // Keep as-is — when this template is loaded, the composed block resolves via its id.
+          // Carry width/align so the composed unit respects user-set sizing.
+          if (b.composedId) out.push(carryMeta(b, { type: 'composed', composedId: b.composedId }));
           break;
         // header / footer / hero (v3-only stubs) are skipped: they don't have
         // a stable representation in the template schema.
@@ -955,14 +1004,42 @@ function App() {
       };
     });
   });
+  // Mueve un bloque arriba/abajo. Funciona en top-level y, si no se
+  // encuentra ahí, recursea por las columnas de cualquier sección. Antes
+  // los bloques dentro de una columna no podían reordenarse — los botones
+  // ↑↓ estaban escondidos vía `!isInner`. Apr 2026 audit fix.
   const moveBlock = (id, dir) => setBlocks(prev => {
+    // 1) Top-level: swap con vecino directo
     const i = prev.findIndex(x => x.id === id);
-    if (i < 0) return prev;
-    const j = i + dir;
-    if (j < 0 || j >= prev.length) return prev;
-    const arr = [...prev];
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-    return arr;
+    if (i >= 0) {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      return arr;
+    }
+    // 2) Buscar en columnas de secciones — el swap es DENTRO de la columna,
+    // no atraviesa columnas (el up/down dentro de una columna mantiene al
+    // bloque en su columna; cruzar requiere drag-drop o eliminar+reañadir).
+    let touched = false;
+    const next = prev.map(x => {
+      if (touched) return x;
+      if (x.type !== 'section' || !Array.isArray(x.columns)) return x;
+      const cols = x.columns.map(col => {
+        if (touched) return col;
+        const blocks = col.blocks || [];
+        const ii = blocks.findIndex(ib => ib.id === id);
+        if (ii < 0) return col;
+        const jj = ii + dir;
+        if (jj < 0 || jj >= blocks.length) { touched = true; return col; }
+        const arr = blocks.slice();
+        [arr[ii], arr[jj]] = [arr[jj], arr[ii]];
+        touched = true;
+        return { ...col, blocks: arr };
+      });
+      return touched ? { ...x, columns: cols } : x;
+    });
+    return touched ? next : prev;
   });
 
   // ─── Undo / Redo for the canvas blocks array ───
