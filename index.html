@@ -1964,6 +1964,31 @@
     flex-direction: column;
     animation: slideIn .2s;
   }
+  /* Wide variant — para editar plantillas y bloques compuestos con
+     split editor + preview en vivo. Misma altura/posición pero mucho
+     más ancho. */
+  .bo-drawer.wide {
+    width: min(1280px, 96vw);
+  }
+  .bo-drawer-split {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    overflow: hidden;
+    min-height: 0;
+  }
+  .bo-drawer-pane-editor {
+    overflow-y: auto;
+    padding: 20px 24px;
+    border-right: 1px solid var(--border);
+  }
+  .bo-drawer-pane-preview {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--bg-sunken);
+  }
   .bo-drawer-header {
     padding: 18px 24px;
     border-bottom: 1px solid var(--border);
@@ -2212,14 +2237,14 @@
 
 <!-- Business logic modules (ported from v2) â€” loaded BEFORE the UI so globals exist. -->
 <script>window.__bv = '20260429a'</script>
-<script type="text/babel" data-presets="react" src="src/app-data.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-i18n.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-security.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-supabase.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-openai.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-email-gen.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-rich-editor.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-ai-agent.jsx?v=20260430v5e"></script>
+<script type="text/babel" data-presets="react" src="src/app-data.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-i18n.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-security.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-supabase.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-openai.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-email-gen.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-rich-editor.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-ai-agent.jsx?v=20260430v5f"></script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -2278,10 +2303,10 @@ Object.assign(window, { Icon });
 </script>
 
 <!-- UI Components -->
-<script type="text/babel" data-presets="react" src="src/app-compositor.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-inspector.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-backoffice.jsx?v=20260430v5e"></script>
-<script type="text/babel" data-presets="react" src="src/app-main.jsx?v=20260430v5e"></script>
+<script type="text/babel" data-presets="react" src="src/app-compositor.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-inspector.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-backoffice.jsx?v=20260430v5f"></script>
+<script type="text/babel" data-presets="react" src="src/app-main.jsx?v=20260430v5f"></script>
 
 </body>
 </html>

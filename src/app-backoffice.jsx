@@ -520,15 +520,36 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
         )}
       </main>
 
-      {editing && <BackofficeDrawer editing={editing} onClose={() => setEditing(null)} onSave={onSave} />}
+      {editing && <BackofficeDrawer editing={editing} appState={appState} onClose={() => setEditing(null)} onSave={onSave} />}
     </div>
   );
 }
 
-function BackofficeDrawer({ editing, onClose, onSave }) {
+function BackofficeDrawer({ editing, appState, onClose, onSave }) {
   const { kind, item } = editing;
   const [lang, setLang] = React.useState('es');
   const [data, setData] = React.useState(item);
+  // Para que el preview en vivo refleje los compositorBlocks RECIÉN
+  // editados, "inyectamos" el data en curso en una copia del appState
+  // antes de pasarla al BoEditPreviewPane. Sin esto, el preview leería
+  // el composedBlocks/templates ya guardado y no mostraría los cambios
+  // hasta hacer Guardar.
+  const previewState = React.useMemo(() => {
+    if (!appState || !data) return appState || {};
+    if (kind === 'composed') {
+      const list = (appState.composedBlocks || []).slice();
+      const idx = list.findIndex(c => c.id === data.id);
+      if (idx >= 0) list[idx] = data; else list.push(data);
+      return Object.assign({}, appState, { composedBlocks: list });
+    }
+    if (kind === 'template') {
+      const list = (appState.templates || []).slice();
+      const idx = list.findIndex(t => t.id === data.id);
+      if (idx >= 0) list[idx] = data; else list.push(data);
+      return Object.assign({}, appState, { templates: list });
+    }
+    return appState;
+  }, [appState, data, kind]);
 
   const titleByKind = {
     product: editing.isNew ? 'Nuevo producto' : 'Editar producto',
@@ -541,16 +562,31 @@ function BackofficeDrawer({ editing, onClose, onSave }) {
     user: editing.isNew ? 'Nuevo usuario' : 'Editar usuario',
   };
 
+  // Plantillas y bloques compuestos abren un drawer ancho con split
+  // editor + preview en vivo (mismo estilo que el composer). El resto de
+  // tipos siguen con el drawer normal de 540px.
+  const isWide = kind === 'template' || kind === 'composed';
+  const previewBlocks = isWide ? (data.compositorBlocks || []) : null;
+  // Templates se editan en idioma neutral (el lang switch sirve solo para
+  // ver cómo queda el preview). Para composed sí afecta al editor (el
+  // título/desc tienen i18n por idioma).
+  const showLangPill = ['product','text','composed','template'].includes(kind);
+  // Para templates añadimos `lang` al estado local solo para previsualizar
+  // en el idioma actual del editor.
+  if (kind === 'template') {
+    // No-op — usamos `lang` del padre (state interno del drawer wrapper).
+  }
+
   return (
     <>
       <div className="bo-drawer-overlay" onClick={onClose} />
-      <div className="bo-drawer" onClick={e => e.stopPropagation()}>
+      <div className={'bo-drawer' + (isWide ? ' wide' : '')} onClick={e => e.stopPropagation()}>
         <div className="bo-drawer-header">
           <div style={{flex:1, minWidth:0}}>
             <div style={{fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.1em', color:'var(--text-muted)', marginBottom:4}}>{titleByKind[kind]}</div>
             <div className="bo-drawer-title">{data.name || data.label || data.title}</div>
           </div>
-          {['product','text','composed'].includes(kind) && (
+          {showLangPill && (
             <div className="lang-pill">
               {['es','fr','de','en','nl'].map(l => (
                 <button key={l} className={lang === l ? 'active' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>
@@ -560,32 +596,42 @@ function BackofficeDrawer({ editing, onClose, onSave }) {
           <button className="icon-btn" onClick={onClose}><Icon name="x" size={16}/></button>
         </div>
 
-        <div className="bo-drawer-body">
-          {kind === 'product' && (
-            <ProductBOEdit data={data} setData={setData} lang={lang} />
-          )}
-          {kind === 'brand' && (
-            <BrandBOEdit data={data} setData={setData} />
-          )}
-          {kind === 'text' && (
-            <TextBOEdit data={data} setData={setData} lang={lang} />
-          )}
-          {kind === 'template' && (
-            <TemplateBOEdit data={data} setData={setData} />
-          )}
-          {kind === 'standalone' && (
-            <StandaloneBOEdit data={data} setData={setData} />
-          )}
-          {kind === 'composed' && (
-            <ComposedBOEdit data={data} setData={setData} lang={lang} />
-          )}
-          {kind === 'cta' && (
-            <CtaSavedBOEdit data={data} setData={setData} />
-          )}
-          {kind === 'user' && (
-            <UserBOEdit data={data} setData={setData} />
-          )}
-        </div>
+        {isWide ? (
+          <div className="bo-drawer-split">
+            <div className="bo-drawer-pane-editor">
+              {kind === 'template' && (
+                <TemplateBOEdit data={data} setData={setData} lang={lang} />
+              )}
+              {kind === 'composed' && (
+                <ComposedBOEdit data={data} setData={setData} lang={lang} />
+              )}
+            </div>
+            <div className="bo-drawer-pane-preview">
+              <BoEditPreviewPane blocks={previewBlocks} appState={previewState} lang={lang} />
+            </div>
+          </div>
+        ) : (
+          <div className="bo-drawer-body">
+            {kind === 'product' && (
+              <ProductBOEdit data={data} setData={setData} lang={lang} />
+            )}
+            {kind === 'brand' && (
+              <BrandBOEdit data={data} setData={setData} />
+            )}
+            {kind === 'text' && (
+              <TextBOEdit data={data} setData={setData} lang={lang} />
+            )}
+            {kind === 'standalone' && (
+              <StandaloneBOEdit data={data} setData={setData} />
+            )}
+            {kind === 'cta' && (
+              <CtaSavedBOEdit data={data} setData={setData} />
+            )}
+            {kind === 'user' && (
+              <UserBOEdit data={data} setData={setData} />
+            )}
+          </div>
+        )}
 
         <div className="bo-drawer-footer">
           <button className="btn btn-ghost danger" style={{color:'var(--danger)', marginRight:'auto'}}>
@@ -983,40 +1029,11 @@ function describeTplBlock(block) {
   }
 }
 
-function TemplateBOEdit({ data, setData }) {
+function TemplateBOEdit({ data, setData, lang }) {
   const set = (k, v) => setData({...data, [k]: v});
   const compBlocks = Array.isArray(data.compositorBlocks) ? data.compositorBlocks : [];
+  const setCompBlocks = (next) => set('compositorBlocks', next);
   const legacyRefs = Array.isArray(data.blocks) ? data.blocks : [];
-
-  const moveBlock = (i, dir) => {
-    const j = i + dir;
-    if (j < 0 || j >= compBlocks.length) return;
-    const next = [...compBlocks];
-    [next[i], next[j]] = [next[j], next[i]];
-    set('compositorBlocks', next);
-  };
-  const deleteBlock = (i) => {
-    const next = compBlocks.filter((_, idx) => idx !== i);
-    set('compositorBlocks', next);
-  };
-  const addBlock = (type) => {
-    const stub = (() => {
-      switch (type) {
-        case 'text': return { type:'text', text:'' };
-        case 'brand_strip': return { type:'brand_strip', brand: data.brand || 'artisjet' };
-        case 'product_single': return { type:'product_single', product1: '' };
-        case 'product_pair': return { type:'product_pair', product1: '', product2: '' };
-        case 'product_trio': return { type:'product_trio', product1: '', product2: '', product3: '' };
-        case 'pimpam_hero': return { type:'pimpam_hero', heroTitle: '' };
-        case 'pimpam_steps': return { type:'pimpam_steps' };
-        case 'video': return { type:'video', youtubeUrl: '' };
-        default: return { type };
-      }
-    })();
-    set('compositorBlocks', [...compBlocks, stub]);
-  };
-
-  const [adding, setAdding] = React.useState(false);
 
   return (
     <>
@@ -1048,63 +1065,214 @@ function TemplateBOEdit({ data, setData }) {
         </div>
       </div>
 
-      <div className="field">
-        <div className="field-label-row">
-          <label className="field-label">Bloques incluidos · {compBlocks.length}</label>
-          <span style={{fontSize:10, color:'var(--text-subtle)'}}>Edita el contenido de cada bloque desde el Compositor</span>
+      {/* Plantillas legacy (con tpl.blocks que son refs a textos/composeds
+          antiguos) se muestran como read-only — para editarlas hay que
+          abrirlas en el composer y resaverlas como compositorBlocks. */}
+      {legacyRefs.length > 0 && compBlocks.length === 0 && (
+        <div className="field">
+          <label className="field-label">Plantilla legacy · {legacyRefs.length} referencias</label>
+          <div style={{display:'flex', flexDirection:'column', gap:4, padding:8, background:'var(--bg-sunken)', borderRadius:'var(--r-sm)'}}>
+            {legacyRefs.map((ref, i) => (
+              <div key={'legacy-'+i} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'var(--bg-panel)', borderRadius:4, fontSize:12, border:'1px dashed var(--border)', opacity:0.75}}>
+                <span className="mono" style={{color:'var(--text-muted)', fontSize:10, minWidth:18}}>{String(i+1).padStart(2,'0')}</span>
+                <span style={{flex:1, fontFamily:'var(--font-mono)', fontSize:11}}>ref · {ref}</span>
+              </div>
+            ))}
+            <div style={{padding:'6px 8px', fontSize:11, color:'var(--text-muted)', fontStyle:'italic'}}>
+              Para convertir a editable: ábrela en el compositor y guarda los cambios — se materializa como compositorBlocks editables.
+            </div>
+          </div>
         </div>
-        <div style={{display:'flex', flexDirection:'column', gap:4, padding:'8px', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)'}}>
-          {compBlocks.length === 0 && legacyRefs.length === 0 && (
-            <div style={{padding:'10px 12px', fontSize:12, color:'var(--text-subtle)', textAlign:'center', fontStyle:'italic'}}>
-              Sin bloques. Añade el primero abajo.
-            </div>
-          )}
-          {compBlocks.map((b, i) => (
-            <div key={i} style={{display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'var(--bg-panel)', borderRadius:4, fontSize:12, border:'1px solid var(--border)'}}>
-              <Icon name="drag" size={12}/>
-              <span className="mono" style={{color:'var(--text-muted)', fontSize:10, minWidth:18}}>{String(i+1).padStart(2,'0')}</span>
-              <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{describeTplBlock(b)}</span>
-              <button className="icon-btn" style={{width:22, height:22}} disabled={i===0} onClick={() => moveBlock(i, -1)} title="Subir"><Icon name="arrowUp" size={11}/></button>
-              <button className="icon-btn" style={{width:22, height:22}} disabled={i===compBlocks.length-1} onClick={() => moveBlock(i, 1)} title="Bajar"><Icon name="arrowDown" size={11}/></button>
-              <button className="icon-btn" style={{width:22, height:22, color:'var(--danger)'}} onClick={() => deleteBlock(i)} title="Eliminar"><Icon name="trash" size={11}/></button>
-            </div>
-          ))}
-          {/* Legacy ref-based templates (older Supabase data) — show read-only */}
-          {legacyRefs.length > 0 && compBlocks.length === 0 && legacyRefs.map((ref, i) => (
-            <div key={'legacy-'+i} style={{display:'flex', alignItems:'center', gap:8, padding:'8px 10px', background:'var(--bg-panel)', borderRadius:4, fontSize:12, border:'1px dashed var(--border)', opacity:0.7}}>
-              <span className="mono" style={{color:'var(--text-muted)', fontSize:10, minWidth:18}}>{String(i+1).padStart(2,'0')}</span>
-              <span style={{flex:1, fontFamily:'var(--font-mono)', fontSize:11}}>ref · {ref}</span>
-            </div>
-          ))}
+      )}
 
-          {!adding ? (
-            <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'center', marginTop:4}} onClick={() => setAdding(true)}>
-              <Icon name="plus" size={12}/> Añadir bloque
-            </button>
-          ) : (
-            <div style={{display:'flex', flexWrap:'wrap', gap:4, padding:6, background:'var(--bg-panel)', borderRadius:4, marginTop:4, border:'1px solid var(--border)'}}>
-              {[
-                {id:'text', label:'Texto'},
-                {id:'brand_strip', label:'Brand strip'},
-                {id:'product_single', label:'1 producto'},
-                {id:'product_pair', label:'2 productos'},
-                {id:'product_trio', label:'3 productos'},
-                {id:'pimpam_hero', label:'Hero'},
-                {id:'pimpam_steps', label:'Pasos'},
-                {id:'video', label:'Vídeo'},
-              ].map(t => (
-                <button key={t.id} className="btn btn-outline" style={{fontSize:11, padding:'4px 8px'}} onClick={() => { addBlock(t.id); setAdding(false); }}>
-                  {t.label}
-                </button>
-              ))}
-              <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 8px'}} onClick={() => setAdding(false)}>
-                Cancelar
-              </button>
-            </div>
-          )}
+      <CompositorBlocksListEditor
+        compBlocks={compBlocks}
+        setCompBlocks={setCompBlocks}
+        lang={lang}
+        label="Bloques de la plantilla"
+        defaultBrand={data.brand}
+      />
+    </>
+  );
+}
+
+/* List-editor reutilizable para compositorBlocks: lo usan tanto el editor
+   de plantillas como el de bloques compuestos para que ambos compartan
+   el mismo flujo de edición (lista de hijos + ChildEditor inline + dos
+   filas de pickers de añadir). El caller pasa el array, su setter y el
+   idioma activo. `defaultBrand` se usa como semilla del brand_strip
+   recién creado para que coincida con la marca del item parent. */
+function CompositorBlocksListEditor({ compBlocks, setCompBlocks, lang, label, defaultBrand }) {
+  const standalones = (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || STANDALONE_BLOCKS || [];
+  const heroStandalones = standalones.filter(s => (s.blockType || s.type) === 'pimpam_hero' && s.visible !== false);
+  const defaultHero = heroStandalones[0] || null;
+
+  const updateChild = (idx, patch) => {
+    const next = compBlocks.map((b, i) => i === idx ? Object.assign({}, b, patch) : b);
+    setCompBlocks(next);
+  };
+  const removeChild = (idx) => setCompBlocks(compBlocks.filter((_, i) => i !== idx));
+  const moveChild = (idx, dir) => {
+    const j = idx + dir;
+    if (j < 0 || j >= compBlocks.length) return;
+    const next = compBlocks.slice();
+    [next[idx], next[j]] = [next[j], next[idx]];
+    setCompBlocks(next);
+  };
+  const addChild = (kind) => {
+    const factory = {
+      text: () => ({ type: 'text', overridesByLang: { es: '' } }),
+      brand_strip: () => ({ type: 'brand_strip', brand: defaultBrand && defaultBrand !== 'mix' ? defaultBrand : 'mbo' }),
+      product_single: () => ({ type: 'product_single', product1: '' }),
+      product_pair: () => ({ type: 'product_pair', product1: '', product2: '' }),
+      product_trio: () => ({ type: 'product_trio', product1: '', product2: '', product3: '' }),
+      image: () => ({ type: 'image', src: '', alt: '', align: 'center', widthPct: 100 }),
+      divider_line: () => ({ type: 'divider_line' }),
+      divider_short: () => ({ type: 'divider_short' }),
+      divider_dots: () => ({ type: 'divider_dots' }),
+      video: () => ({ type: 'video', youtubeUrl: '' }),
+      pimpam_hero: () => defaultHero
+        ? { type: 'pimpam_hero', standaloneId: defaultHero.id, _sourceType: 'standalone', _sourceId: defaultHero.id }
+        : { type: 'pimpam_hero', heroTitle: '', heroSubtitle: '', heroBullets: [], heroCtaButtons: [] },
+      cta: () => ({ type: 'cta', text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center' }),
+      section_2col: () => ({ type: 'section', layout: '2col', columns: [{ blocks: [] }, { blocks: [] }] }),
+      section_3col: () => ({ type: 'section', layout: '3col', columns: [{ blocks: [] }, { blocks: [] }, { blocks: [] }] }),
+    };
+    const f = factory[kind];
+    if (!f) return;
+    setCompBlocks([...compBlocks, f()]);
+  };
+
+  return (
+    <div className="field">
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+        <label className="field-label" style={{margin:0}}>{label || 'Bloques'} · {compBlocks.length}</label>
+      </div>
+      <div style={{
+        display:'flex', flexDirection:'column', gap:8,
+        border:'1px dashed var(--border-strong)', borderRadius:'var(--r-md)',
+        padding:10, background:'var(--bg-sunken)',
+      }}>
+        {compBlocks.length === 0 && (
+          <div style={{padding:18, textAlign:'center', color:'var(--text-subtle)', fontSize:12}}>
+            Sin bloques. Añade el primero abajo.
+          </div>
+        )}
+        {compBlocks.map((b, i) => (
+          <ComposedChildEditor
+            key={i}
+            block={b}
+            index={i}
+            total={compBlocks.length}
+            lang={lang}
+            onUpdate={(patch) => updateChild(i, patch)}
+            onRemove={() => removeChild(i)}
+            onMove={(dir) => moveChild(i, dir)}
+          />
+        ))}
+      </div>
+      <div style={{display:'flex', flexDirection:'column', gap:4, marginTop:8}}>
+        <div style={{display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
+          <span style={{fontSize:11, color:'var(--text-muted)', marginRight:4, fontWeight:600, letterSpacing:0.3}}>Contenido:</span>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('text')}><Icon name="text" size={11}/> Texto</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_single')}><Icon name="box" size={11}/> 1 producto</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_pair')}><Icon name="box" size={11}/> 2 productos</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_trio')}><Icon name="box" size={11}/> 3 productos</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('image')}><Icon name="copy" size={11}/> Imagen</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('video')}><Icon name="zap" size={11}/> Vídeo</button>
+        </div>
+        <div style={{display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
+          <span style={{fontSize:11, color:'var(--text-muted)', marginRight:4, fontWeight:600, letterSpacing:0.3}}>Estructura:</span>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('pimpam_hero')} disabled={!defaultHero} title={!defaultHero ? 'No hay heros sueltos creados — crea uno primero en "Bloques sueltos"' : ''}><Icon name="zap" size={11}/> Hero</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('cta')}><Icon name="zap" size={11}/> CTA</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('brand_strip')}><Icon name="palette" size={11}/> Strip de marca</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('section_2col')}><Icon name="grid" size={11}/> 2 columnas</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('section_3col')}><Icon name="grid" size={11}/> 3 columnas</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('divider_line')}>— Divisor</button>
         </div>
       </div>
-    </>
+    </div>
+  );
+}
+
+/* Pane lateral con preview en vivo del HTML del email. Lo usan los
+   editores de plantilla y compuesto en modo wide-drawer para que el
+   admin vea cómo queda lo que está montando sin tener que cerrar y
+   reabrir el composer. Renderiza los compositorBlocks via la misma
+   función que el composer (renderEmailHtml) para que el resultado sea
+   100% fiel. Toggle desktop/mobile + abrir en pestaña nueva. */
+function BoEditPreviewPane({ blocks, appState, lang }) {
+  const [device, setDevice] = React.useState('desktop');
+  const iframeRef = React.useRef(null);
+  // Compute HTML on every change of blocks/lang/appState. renderEmailHtml
+  // expects v3 blocks — compositorBlocks is exactly that.
+  const html = React.useMemo(() => {
+    const fn = (typeof window !== 'undefined' && window.renderEmailHtml) || (typeof renderEmailHtml === 'function' ? renderEmailHtml : null);
+    if (fn) {
+      try {
+        return fn(blocks || [], appState || {}, lang || 'es');
+      } catch (e) {
+        return '<html><body style="padding:20px;font-family:system-ui;color:#dc2626">Error al renderizar: ' + (e.message || e) + '</body></html>';
+      }
+    }
+    return '<html><body><pre>' + JSON.stringify(blocks, null, 2) + '</pre></body></html>';
+  }, [blocks, appState, lang]);
+
+  React.useEffect(() => {
+    const f = iframeRef.current;
+    if (!f) return;
+    const doc = f.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(html);
+    doc.close();
+  }, [html]);
+
+  const openInNewTab = () => {
+    const w = window.open('about:blank', '_blank');
+    if (w) { w.document.write(html); w.document.close(); }
+  };
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', height:'100%', background:'var(--bg-sunken)'}}>
+      <div style={{padding:'10px 14px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, background:'var(--bg-panel)'}}>
+        <Icon name="eye" size={13}/>
+        <strong style={{fontSize:12, flex:1}}>Preview en vivo</strong>
+        <span className="mono" style={{fontSize:10, color:'var(--text-subtle)'}}>{(blocks || []).length} bloques · {(lang || 'es').toUpperCase()}</span>
+        <div className="device-toggle">
+          <button className={'icon-btn' + (device === 'desktop' ? ' active' : '')} onClick={() => setDevice('desktop')} title="Desktop">
+            <Icon name="monitor" size={12}/>
+          </button>
+          <button className={'icon-btn' + (device === 'mobile' ? ' active' : '')} onClick={() => setDevice('mobile')} title="Móvil">
+            <Icon name="smartphone" size={12}/>
+          </button>
+        </div>
+        <button className="icon-btn" onClick={openInNewTab} title="Abrir en pestaña nueva">
+          <Icon name="share" size={12}/>
+        </button>
+      </div>
+      <div style={{flex:1, overflow:'auto', padding:14, display:'flex', justifyContent:'center'}}>
+        {(blocks || []).length === 0 ? (
+          <div style={{alignSelf:'center', padding:40, textAlign:'center', color:'var(--text-muted)', fontSize:12}}>
+            Añade bloques en el editor de la izquierda · el preview se actualiza en vivo.
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            title="Preview email"
+            style={{
+              width: device === 'mobile' ? 380 : '100%',
+              maxWidth: device === 'mobile' ? 380 : 720,
+              height: '100%',
+              minHeight: 400,
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-sm)',
+              background: '#fff',
+            }}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1131,59 +1299,7 @@ function ComposedBOEdit({ data, setData, lang }) {
 
   const allBrands = (typeof window !== 'undefined' && window.BRANDS) || BRANDS || [];
   const compBlocks = Array.isArray(data.compositorBlocks) ? data.compositorBlocks : [];
-
   const setCompBlocks = (next) => set('compositorBlocks', next);
-  const updateChild = (idx, patch) => {
-    const next = compBlocks.map((b, i) => i === idx ? Object.assign({}, b, patch) : b);
-    setCompBlocks(next);
-  };
-  const removeChild = (idx) => {
-    setCompBlocks(compBlocks.filter((_, i) => i !== idx));
-  };
-  const moveChild = (idx, dir) => {
-    const j = idx + dir;
-    if (j < 0 || j >= compBlocks.length) return;
-    const next = compBlocks.slice();
-    [next[idx], next[j]] = [next[j], next[idx]];
-    setCompBlocks(next);
-  };
-  // El primer hero suelto disponible se ofrece como source por defecto
-  // cuando el user añade un bloque hero al compuesto. Si no hay ningún
-  // hero en standaloneBlocks, el bloque se añade sin _sourceId y el user
-  // escribirá los campos a mano (más adelante) — nada se rompe.
-  const standalones = (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || STANDALONE_BLOCKS || [];
-  const heroStandalones = standalones.filter(s => (s.blockType || s.type) === 'pimpam_hero' && s.visible !== false);
-  const defaultHero = heroStandalones[0] || null;
-
-  const addChild = (kind) => {
-    const factory = {
-      text: () => ({ type: 'text', overridesByLang: { es: '' } }),
-      brand_strip: () => ({ type: 'brand_strip', brand: 'mbo' }),
-      product_single: () => ({ type: 'product_single', product1: '' }),
-      product_pair: () => ({ type: 'product_pair', product1: '', product2: '' }),
-      product_trio: () => ({ type: 'product_trio', product1: '', product2: '', product3: '' }),
-      image: () => ({ type: 'image', src: '', alt: '', align: 'center', widthPct: 100 }),
-      divider_line: () => ({ type: 'divider_line' }),
-      divider_short: () => ({ type: 'divider_short' }),
-      divider_dots: () => ({ type: 'divider_dots' }),
-      video: () => ({ type: 'video', youtubeUrl: '' }),
-      // Hero: por defecto enlazamos al primer hero suelto disponible. Así
-      // hereda los textos/bullets/CTAs del source y se puede repickear en
-      // el editor inline.
-      pimpam_hero: () => defaultHero
-        ? { type: 'pimpam_hero', standaloneId: defaultHero.id, _sourceType: 'standalone', _sourceId: defaultHero.id }
-        : { type: 'pimpam_hero', heroTitle: '', heroSubtitle: '', heroBullets: [], heroCtaButtons: [] },
-      // CTA inline. Mismos campos que el bloque CTA del composer.
-      cta: () => ({ type: 'cta', text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center' }),
-      // Secciones multi-columna. Cada columna empieza vacía; el editor
-      // permite añadir hijos recursivamente.
-      section_2col: () => ({ type: 'section', layout: '2col', columns: [{ blocks: [] }, { blocks: [] }] }),
-      section_3col: () => ({ type: 'section', layout: '3col', columns: [{ blocks: [] }, { blocks: [] }, { blocks: [] }] }),
-    };
-    const f = factory[kind];
-    if (!f) return;
-    setCompBlocks([...compBlocks, f()]);
-  };
 
   return (
     <>
@@ -1220,54 +1336,13 @@ function ComposedBOEdit({ data, setData, lang }) {
         </div>
       </div>
 
-      <div className="field">
-        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
-          <label className="field-label" style={{margin:0}}>Bloques que componen esta agrupación · {compBlocks.length}</label>
-        </div>
-        <div style={{
-          display:'flex', flexDirection:'column', gap:8,
-          border:'1px dashed var(--border-strong)', borderRadius:'var(--r-md)',
-          padding:10, background:'var(--bg-sunken)',
-        }}>
-          {compBlocks.length === 0 && (
-            <div style={{padding:18, textAlign:'center', color:'var(--text-subtle)', fontSize:12}}>
-              Sin bloques. Añade el primero abajo — texto, productos, marca, imagen, divisor, vídeo…
-            </div>
-          )}
-          {compBlocks.map((b, i) => (
-            <ComposedChildEditor
-              key={i}
-              block={b}
-              index={i}
-              total={compBlocks.length}
-              lang={lang}
-              onUpdate={(patch) => updateChild(i, patch)}
-              onRemove={() => removeChild(i)}
-              onMove={(dir) => moveChild(i, dir)}
-            />
-          ))}
-        </div>
-        <div style={{display:'flex', flexDirection:'column', gap:4, marginTop:8}}>
-          <div style={{display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
-            <span style={{fontSize:11, color:'var(--text-muted)', marginRight:4, fontWeight:600, letterSpacing:0.3}}>Contenido:</span>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('text')}><Icon name="text" size={11}/> Texto</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_single')}><Icon name="box" size={11}/> 1 producto</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_pair')}><Icon name="box" size={11}/> 2 productos</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_trio')}><Icon name="box" size={11}/> 3 productos</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('image')}><Icon name="copy" size={11}/> Imagen</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('video')}><Icon name="zap" size={11}/> Vídeo</button>
-          </div>
-          <div style={{display:'flex', flexWrap:'wrap', gap:6, alignItems:'center'}}>
-            <span style={{fontSize:11, color:'var(--text-muted)', marginRight:4, fontWeight:600, letterSpacing:0.3}}>Estructura:</span>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('pimpam_hero')} disabled={!defaultHero} title={!defaultHero ? 'No hay heros sueltos creados — crea uno primero en "Bloques sueltos"' : ''}><Icon name="zap" size={11}/> Hero</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('cta')}><Icon name="zap" size={11}/> CTA</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('brand_strip')}><Icon name="palette" size={11}/> Strip de marca</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('section_2col')}><Icon name="grid" size={11}/> 2 columnas</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('section_3col')}><Icon name="grid" size={11}/> 3 columnas</button>
-            <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('divider_line')}>— Divisor</button>
-          </div>
-        </div>
-      </div>
+      <CompositorBlocksListEditor
+        compBlocks={compBlocks}
+        setCompBlocks={setCompBlocks}
+        lang={lang}
+        label="Bloques que componen esta agrupación"
+        defaultBrand={data.brand}
+      />
     </>
   );
 }
