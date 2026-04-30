@@ -807,7 +807,27 @@ function PimpamHeroEditor({ block, onUpdate, lang }) {
   const set = (key, v) => onUpdate(block.id, {...block, [key]: v});
 
   const bullets = valArr('heroBullets');
-  const ctaButtons = valArr('heroCtaButtons');
+  // CTAs: chequeamos heroCtaButtons (forma moderna) y, si no existe,
+  // derivamos un botón único de los campos legacy heroCtaText/heroCtaUrl.
+  // Sin este fallback, los heros que vienen de defaults o de standalones
+  // viejos aparecían SIN botones en el editor (aunque sí se renderizaban
+  // en preview/canvas, donde pimpamHeroHtml hace la misma conversión).
+  // Bug fix Apr 2026.
+  const _legacyCta = (src) => {
+    if (!src) return null;
+    const t = src.heroCtaText, u = src.heroCtaUrl;
+    if (t && u) return [{ text: t, url: u, bg: src.heroCtaColor || '#ea580c', color: '#ffffff' }];
+    return null;
+  };
+  const ctaButtons = (() => {
+    if (Array.isArray(block.heroCtaButtons) && block.heroCtaButtons.length) return block.heroCtaButtons;
+    if (Array.isArray(sbI18n.heroCtaButtons) && sbI18n.heroCtaButtons.length) return sbI18n.heroCtaButtons;
+    const legacyBlock = _legacyCta(block); if (legacyBlock) return legacyBlock;
+    const legacyI18n = _legacyCta(sbI18n); if (legacyI18n) return legacyI18n;
+    if (Array.isArray(sbConf.heroCtaButtons) && sbConf.heroCtaButtons.length) return sbConf.heroCtaButtons;
+    const legacyConf = _legacyCta(sbConf); if (legacyConf) return legacyConf;
+    return [];
+  })();
 
   return (
     <>

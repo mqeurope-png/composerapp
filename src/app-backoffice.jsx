@@ -1464,11 +1464,34 @@ function StandaloneBOEdit({ data, setData }) {
   const addBullet = () => setCfg('heroBullets', [...bullets, '']);
   const delBullet = (i) => setCfg('heroBullets', bullets.filter((_, idx) => idx !== i));
 
-  // Editor de CTA buttons (heros)
-  const ctaButtons = Array.isArray(cfg.heroCtaButtons) ? cfg.heroCtaButtons : [];
-  const setCtaBtn = (i, k, v) => setCfg('heroCtaButtons', ctaButtons.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
-  const addCtaBtn = () => setCfg('heroCtaButtons', [...ctaButtons, { text: 'Más info', url: '', bg: '#1d4ed8', color: '#ffffff' }]);
-  const delCtaBtn = (i) => setCfg('heroCtaButtons', ctaButtons.filter((_, idx) => idx !== i));
+  // Editor de CTA buttons (heros). Si no hay heroCtaButtons (forma moderna)
+  // pero existen los campos legacy heroCtaText/heroCtaUrl, los promocionamos
+  // a un botón único para que aparezca en el editor. Sin este fallback,
+  // standalones viejos mostraban "+ Añadir CTA" vacío aunque el preview
+  // renderizara perfectamente el botón. Bug fix Apr 2026 — replica la
+  // misma conversión que hace pimpamHeroHtml() al renderizar.
+  const ctaButtons = (() => {
+    if (Array.isArray(cfg.heroCtaButtons) && cfg.heroCtaButtons.length) return cfg.heroCtaButtons;
+    if (cfg.heroCtaText && cfg.heroCtaUrl) {
+      return [{ text: cfg.heroCtaText, url: cfg.heroCtaUrl, bg: cfg.heroCtaColor || '#1d4ed8', color: '#ffffff' }];
+    }
+    return [];
+  })();
+  // Cuando se edita por primera vez un hero legacy, materializamos
+  // heroCtaButtons con el botón derivado y limpiamos heroCtaText/heroCtaUrl
+  // para que el origen único de verdad sea el array (evita doble-render
+  // si quedaran campos legacy + array al mismo tiempo).
+  const _materializeCtaArr = (next) => {
+    const patch = { heroCtaButtons: next };
+    if (cfg.heroCtaText || cfg.heroCtaUrl) {
+      patch.heroCtaText = '';
+      patch.heroCtaUrl = '';
+    }
+    setData({ ...data, config: { ...cfg, ...patch } });
+  };
+  const setCtaBtn = (i, k, v) => _materializeCtaArr(ctaButtons.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+  const addCtaBtn = () => _materializeCtaArr([...ctaButtons, { text: 'Más info', url: '', bg: '#1d4ed8', color: '#ffffff' }]);
+  const delCtaBtn = (i) => _materializeCtaArr(ctaButtons.filter((_, idx) => idx !== i));
 
   // Editor de pasos (pimpam_steps)
   const steps = Array.isArray(cfg.steps) ? cfg.steps : [];
