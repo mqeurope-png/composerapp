@@ -8,7 +8,7 @@
 const _liveProducts = () => (typeof window !== 'undefined' && window.PRODUCTS) || PRODUCTS || [];
 const _liveBrands   = () => (typeof window !== 'undefined' && window.BRANDS) || BRANDS || [];
 
-function Inspector({ block, onUpdate, onClose, onDelete, onDuplicate, lang, setLang, onOpenBackoffice }) {
+function Inspector({ block, onUpdate, onClose, onDelete, onDuplicate, lang, setLang, onOpenBackoffice, appState }) {
   if (!block) return null;
 
   const product = block.type === 'product' && _liveProducts().find(p => p.id === block.productId);
@@ -118,6 +118,12 @@ function Inspector({ block, onUpdate, onClose, onDelete, onDuplicate, lang, setL
         )}
         {block.type === 'composed' && (
           <ComposedEditor block={block} onUpdate={onUpdate} lang={lang} onOpenBackoffice={onOpenBackoffice} />
+        )}
+        {block.type === 'image' && (
+          <ImageBlockEditor block={block} onUpdate={onUpdate} appState={appState} />
+        )}
+        {block.type === 'cta' && (
+          <CtaBlockEditor block={block} onUpdate={onUpdate} />
         )}
       </div>
 
@@ -790,8 +796,11 @@ function PimpamHeroEditor({ block, onUpdate, lang }) {
         <Field label="Subtítulo">
           <textarea className="textarea" rows={3} value={val('heroSubtitle')} onChange={e => set('heroSubtitle', e.target.value)} />
         </Field>
-        <Field label="Imagen (URL)">
-          <input className="input mono" style={{fontSize:11}} value={val('heroImage')} onChange={e => set('heroImage', e.target.value)} />
+        <Field label="Imagen del hero">
+          {(typeof window !== 'undefined' && typeof window.ImageUploadInput === 'function')
+            ? <window.ImageUploadInput value={val('heroImage')} onChange={v => set('heroImage', v)} prefix={'heroes/' + (block.id || 'new')} placeholder="https://… o pulsa Subir" />
+            : <input className="input mono" style={{fontSize:11}} value={val('heroImage')} onChange={e => set('heroImage', e.target.value)} />
+          }
         </Field>
         {val('heroImage') && (
           <div style={{marginTop:6, borderRadius:'var(--r-sm)', overflow:'hidden', maxHeight:120}}>
@@ -1064,4 +1073,131 @@ function ComposedEditor({ block, onUpdate, lang, onOpenBackoffice }) {
   );
 }
 
-Object.assign(window, { Inspector, AiTextPopover });
+/* Image block editor — URL field with library button + upload, plus alt,
+   link wrapper, and alignment. */
+function ImageBlockEditor({ block, onUpdate, appState }) {
+  const set = (k, v) => onUpdate({ ...block, [k]: v });
+  const [showLib, setShowLib] = React.useState(false);
+  const Lib = (typeof window !== 'undefined' && window.ImageLibraryModal) || null;
+  const Upload = (typeof window !== 'undefined' && window.ImageUploadInput) || null;
+  return (
+    <Section title="Imagen">
+      <Field label="URL de la imagen">
+        {Upload
+          ? <Upload value={block.src || ''} onChange={v => set('src', v)} prefix={'image-block/' + (block.id || 'new')} />
+          : <input className="input mono" style={{fontSize:11}} value={block.src || ''} onChange={e => set('src', e.target.value)} placeholder="https://…" />
+        }
+      </Field>
+      <Field label="Biblioteca">
+        <button className="btn btn-outline" style={{fontSize:11}} onClick={() => setShowLib(true)} disabled={!Lib}>
+          <Icon name="copy" size={11}/> Elegir de la biblioteca
+        </button>
+      </Field>
+      {showLib && Lib && (
+        <Lib appState={appState} setAppState={(...a) => { if (typeof window.__setAppState === 'function') window.__setAppState(...a); }} onPick={url => { set('src', url); setShowLib(false); }} onClose={() => setShowLib(false)} />
+      )}
+      <Field label="Texto alternativo (alt)">
+        <input className="input" value={block.alt || ''} onChange={e => set('alt', e.target.value)} placeholder="Descripción para lectores de pantalla y email clients sin imágenes" />
+      </Field>
+      <Field label="Enlace (opcional)">
+        <input className="input mono" style={{fontSize:11}} value={block.link || ''} onChange={e => set('link', e.target.value)} placeholder="https://… (la imagen será clicable)" />
+      </Field>
+      <Field label="Alineación">
+        <div style={{display:'flex', gap:4}}>
+          {['left','center','right'].map(a => (
+            <button key={a} className={'btn ' + (block.align === a || (!block.align && a === 'center') ? 'btn-primary' : 'btn-ghost')} style={{fontSize:11, flex:1}} onClick={() => set('align', a)}>
+              {a === 'left' ? 'Izquierda' : a === 'right' ? 'Derecha' : 'Centro'}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Ancho (% del contenedor)">
+        <input type="range" min={20} max={100} step={5} value={block.widthPct || 100} onChange={e => set('widthPct', parseInt(e.target.value, 10))} style={{width:'100%'}}/>
+        <div style={{fontSize:11, color:'var(--text-muted)', textAlign:'right'}}>{block.widthPct || 100}%</div>
+      </Field>
+    </Section>
+  );
+}
+
+/* CTA editor — title, subtitle, bullets, button text/URL/colors, alignment,
+   optional panel background. Bullets are stored as an array; the editor
+   renders one input per bullet plus an "add" / trash row. */
+function CtaBlockEditor({ block, onUpdate }) {
+  const set = (k, v) => onUpdate({ ...block, [k]: v });
+  const bullets = Array.isArray(block.bullets) ? block.bullets : [];
+  const setBullet = (i, v) => set('bullets', bullets.map((x, idx) => idx === i ? v : x));
+  const addBullet = () => set('bullets', [...bullets, '']);
+  const delBullet = (i) => set('bullets', bullets.filter((_, idx) => idx !== i));
+  return (
+    <>
+      <Section title="Texto del CTA">
+        <Field label="Título (opcional)">
+          <input className="input" value={block.title || ''} onChange={e => set('title', e.target.value)} placeholder="Ej. ¿Listo para empezar?" />
+        </Field>
+        <Field label="Subtítulo (opcional)">
+          <textarea className="textarea" rows={2} value={block.subtitle || ''} onChange={e => set('subtitle', e.target.value)} placeholder="Línea descriptiva debajo del título" />
+        </Field>
+        <Field label={'Lista (' + bullets.length + ')'}>
+          <div style={{display:'flex', flexDirection:'column', gap:4}}>
+            {bullets.map((bp, i) => (
+              <div key={i} style={{display:'flex', gap:4, alignItems:'center'}}>
+                <input className="input" style={{flex:1}} value={bp} onChange={e => setBullet(i, e.target.value)} placeholder={'Bullet ' + (i+1)} />
+                <button className="icon-btn" onClick={() => delBullet(i)} title="Eliminar"><Icon name="trash" size={11}/></button>
+              </div>
+            ))}
+            <button className="btn btn-ghost" style={{fontSize:11}} onClick={addBullet}><Icon name="plus" size={11}/> Añadir bullet</button>
+          </div>
+        </Field>
+      </Section>
+      <Section title="Botón">
+        <Field label="Texto del botón">
+          <input className="input" value={block.text || ''} onChange={e => set('text', e.target.value)} placeholder="Más información" />
+        </Field>
+        <Field label="URL de destino">
+          <input className="input mono" style={{fontSize:11}} value={block.url || ''} onChange={e => set('url', e.target.value)} placeholder="https://… o mailto:…" />
+        </Field>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+          <Field label="Fondo botón">
+            <div style={{display:'flex', gap:6, alignItems:'center'}}>
+              <input type="color" value={block.bg || '#1d4ed8'} onChange={e => set('bg', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} />
+              <input className="input mono" style={{fontSize:11}} value={block.bg || '#1d4ed8'} onChange={e => set('bg', e.target.value)} />
+            </div>
+          </Field>
+          <Field label="Texto botón">
+            <div style={{display:'flex', gap:6, alignItems:'center'}}>
+              <input type="color" value={block.color || '#ffffff'} onChange={e => set('color', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} />
+              <input className="input mono" style={{fontSize:11}} value={block.color || '#ffffff'} onChange={e => set('color', e.target.value)} />
+            </div>
+          </Field>
+        </div>
+      </Section>
+      <Section title="Estilo">
+        <Field label="Alineación">
+          <div style={{display:'flex', gap:4}}>
+            {['left','center','right'].map(a => (
+              <button key={a} className={'btn ' + (block.align === a || (!block.align && a === 'center') ? 'btn-primary' : 'btn-ghost')} style={{fontSize:11, flex:1}} onClick={() => set('align', a)}>
+                {a === 'left' ? 'Izquierda' : a === 'right' ? 'Derecha' : 'Centro'}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+          <Field label="Fondo de panel">
+            <div style={{display:'flex', gap:6, alignItems:'center'}}>
+              <input type="color" value={block.panelBg && block.panelBg !== 'transparent' ? block.panelBg : '#f8fafc'} onChange={e => set('panelBg', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} />
+              <input className="input mono" style={{fontSize:11}} value={block.panelBg || ''} placeholder="transparent" onChange={e => set('panelBg', e.target.value || 'transparent')} />
+            </div>
+          </Field>
+          <Field label="Borde de panel">
+            <div style={{display:'flex', gap:6, alignItems:'center'}}>
+              <input type="color" value={block.panelBorder && block.panelBorder !== 'transparent' ? block.panelBorder : '#e2e8f0'} onChange={e => set('panelBorder', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}} />
+              <input className="input mono" style={{fontSize:11}} value={block.panelBorder || ''} placeholder="transparent" onChange={e => set('panelBorder', e.target.value || 'transparent')} />
+            </div>
+          </Field>
+        </div>
+      </Section>
+    </>
+  );
+}
+
+Object.assign(window, { Inspector, AiTextPopover, ImageBlockEditor, CtaBlockEditor });

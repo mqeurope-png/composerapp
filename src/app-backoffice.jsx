@@ -1,6 +1,41 @@
 /* ───────────── BACKOFFICE VIEW ───────────── */
 
-function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoadTemplateInCompositor, currentUser, isItemHidden, setItemHiddenForCurrentUser, autoHideForOthers }) {
+/* Generate a fresh blank record for a given editor kind. The id uses a
+   timestamp + short random suffix to stay unique across rapid clicks. */
+function _newBoId(prefix) {
+  return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+}
+function blankItemForKind(kind) {
+  const t = Date.now();
+  switch (kind) {
+    case 'product':
+      return { id: _newBoId('p'), brand: 'mbo', name: '', desc: '', price: '', area: '', img: '', feat1: '', feat2: '', badge: '', visible: true, i18n: {} };
+    case 'brand':
+      return { id: _newBoId('br'), label: 'Nueva marca', logo: '', url: { es:'',fr:'',de:'',en:'',nl:'' }, urlLabel: { es:'',fr:'',de:'',en:'',nl:'' }, color: '#64748b', divider: '#e2e8f0', logoHeight: '18', visible: true, logoText: 'Nueva' };
+    case 'text':
+      return { id: _newBoId('text'), name: 'Texto nuevo', icon: '✏️', brand: 'mix', text: '', visible: true, i18n: {} };
+    case 'template':
+      return { id: _newBoId('tpl'), name: 'Plantilla nueva', desc: '', colorClass: 'gray', brand: 'mix', compositorBlocks: [], visible: true, i18n: {} };
+    case 'standalone':
+      return { id: _newBoId('sb'), title: 'Bloque nuevo', desc: '', icon: '🧩', iconBg: '#e5e7eb', brand: 'mix', section: 'otros', blockType: 'product_single', config: { defaultProduct: '' }, visible: true, i18n: {} };
+    case 'composed':
+      return { id: _newBoId('cb'), title: 'Compuesto nuevo', desc: '', priceRange: '', colorTag: 'gray', introText: '', brandStrip: 'none', blockType: 'product_pair', products: ['',''], includeHero: false, includeSteps: false, visible: true, i18n: {} };
+    case 'cta':
+      return { id: _newBoId('cta'), name: 'CTA nuevo', title: '', subtitle: '', bullets: [], text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center', panelBg: 'transparent', panelBorder: 'transparent', visible: true };
+    case 'user':
+      return { id: _newBoId('u'), name: 'Nuevo usuario', role: 'commercial', passwordHash: '', hiddenItems: {}, aiStyles: {} };
+    default: return null;
+  }
+}
+
+function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoadTemplateInCompositor, currentUser, lang, isItemHidden, setItemHiddenForCurrentUser, autoHideForOthers }) {
+  // Helper: read a localized field, falling back to the base ES value when no
+  // translation exists. The BO list views honor the active language so the
+  // user can verify how each item looks in FR/DE/EN/NL without having to dig
+  // into each editor.
+  const L = (obj, field) => (typeof window.getLocalizedText === 'function')
+    ? window.getLocalizedText(obj, field, lang)
+    : (obj && obj[field]);
   const isAdmin = currentUser?.role === 'admin';
   const [tab, setTab] = React.useState('products');
   const [search, setSearch] = React.useState('');
@@ -12,6 +47,8 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   const texts = (appState && appState.prewrittenTexts) || PREWRITTEN_TEXTS;
   const templates = (appState && appState.templates) || TEMPLATES;
   const blocks = (appState && appState.standaloneBlocks) || STANDALONE_BLOCKS;
+  const composed = (appState && appState.composedBlocks) || COMPOSED_BLOCKS || [];
+  const ctaBlocks = (appState && appState.ctaBlocks) || [];
 
   // Persist edits from the drawer back into appState.
   const onSave = (kind, data) => {
@@ -22,6 +59,8 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
       text: 'prewrittenTexts',
       template: 'templates',
       standalone: 'standaloneBlocks',
+      composed: 'composedBlocks',
+      cta: 'ctaBlocks',
       user: 'users',
     }[kind];
     if (!collection) { setEditing(null); return; }
@@ -51,7 +90,9 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
     { id: 'brands', label: 'Marcas', icon: 'palette', count: brands.length },
     { id: 'texts', label: 'Textos', icon: 'text', count: texts.length },
     { id: 'templates', label: 'Plantillas', icon: 'template', count: templates.length },
-    { id: 'blocks', label: 'Bloques', icon: 'layers', count: blocks.length },
+    { id: 'blocks', label: 'Bloques sueltos', icon: 'layers', count: blocks.length },
+    { id: 'composed', label: 'Compuestos', icon: 'box', count: composed.length },
+    { id: 'ctas', label: 'CTAs', icon: 'zap', count: ctaBlocks.length },
   ];
   const adminNavItems = [
     { id: 'users', label: 'Usuarios', icon: 'lock', count: users.length },
@@ -78,7 +119,9 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
     brands: { title: 'Marcas', sub: 'Logos, URLs y colores por idioma.' },
     texts: { title: 'Textos pre-escritos', sub: 'Plantillas de texto reutilizables.' },
     templates: { title: 'Plantillas', sub: 'Emails pre-montados listos para editar.' },
-    blocks: { title: 'Bloques compuestos', sub: 'Cabeceras, footers, heroes y strips.' },
+    blocks: { title: 'Bloques sueltos', sub: 'Strips, heroes, vídeos y selectores de producto.' },
+    composed: { title: 'Bloques compuestos', sub: 'Combos pre-montados (intro + productos + brand strip).' },
+    ctas: { title: 'CTAs guardados', sub: 'Llamadas a la acción reutilizables (título + bullets + botón).' },
     users: { title: 'Usuarios', sub: 'Gestiona accesos y roles. Solo admin.' },
     ai: { title: 'Asistente de redacción', sub: 'API key y tono por idioma. Solo admin.' },
     settings: { title: 'Ajustes', sub: 'Sincronización, acceso y preferencias. Solo admin.' },
@@ -86,9 +129,69 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   };
   const current = titleMap[tab] || titleMap.products;
 
+  const _matches = (str) => !search || (str || '').toLowerCase().includes(search.toLowerCase());
   const filteredProducts = products.filter(p =>
     (brandFilter === 'all' || p.brand === brandFilter) &&
-    (!search || p.name.toLowerCase().includes(search.toLowerCase()))
+    (_matches(p.name) || _matches(L(p, 'name')))
+  );
+  const filteredTexts = texts.filter(t =>
+    (brandFilter === 'all' || t.brand === brandFilter) &&
+    (_matches(t.name) || _matches(L(t, 'name')) || _matches(t.text))
+  );
+  const filteredTemplates = templates.filter(t =>
+    (brandFilter === 'all' || t.brand === brandFilter) &&
+    (_matches(t.name) || _matches(L(t, 'name')) || _matches(t.desc))
+  );
+  const filteredBlocks = blocks.filter(b =>
+    (brandFilter === 'all' || b.brand === brandFilter) &&
+    (_matches(b.title) || _matches(L(b, 'title')) || _matches(b.section))
+  );
+  const filteredComposed = composed.filter(c => {
+    const cBrand = c.brand || c.brandStrip;
+    return (brandFilter === 'all' || cBrand === brandFilter) &&
+      (_matches(c.title) || _matches(L(c, 'title')) || _matches(c.desc) || _matches(c.introText));
+  });
+  const filteredCtas = ctaBlocks.filter(c =>
+    (brandFilter === 'all' || c.brand === brandFilter) &&
+    (_matches(c.name) || _matches(c.title) || _matches(c.text) || _matches(c.url))
+  );
+
+  // Map current tab → drawer kind so the "+ Nuevo" button knows what blank
+  // template to create. Tabs without an editable kind (brands/users/ai/etc)
+  // are handled separately or hide the button entirely.
+  const tabToKind = {
+    products: 'product',
+    brands: 'brand',
+    texts: 'text',
+    templates: 'template',
+    blocks: 'standalone',
+    composed: 'composed',
+    ctas: 'cta',
+  };
+  const newKind = tabToKind[tab] || null;
+  const onNew = () => {
+    if (!newKind) return;
+    const item = blankItemForKind(newKind);
+    if (item) setEditing({ kind: newKind, item, isNew: true });
+  };
+
+  // Reusable toolbar row used across Textos / Plantillas / Bloques tabs.
+  const renderToolbar = (placeholder) => (
+    <div className="bo-toolbar">
+      <div className="bo-search">
+        <Icon name="search" size={14} />
+        <input placeholder={placeholder} value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+      <div className="brand-chips" style={{padding:0, margin:0}}>
+        <button className={'brand-chip' + (brandFilter === 'all' ? ' active' : '')} onClick={() => setBrandFilter('all')}>Todas</button>
+        {brands.filter(b => b.id !== 'bomedia').map(b => (
+          <button key={b.id} className={'brand-chip' + (brandFilter === b.id ? ' active' : '')} onClick={() => setBrandFilter(b.id)} style={brandFilter === b.id ? {} : { color: b.color }}>
+            <span className="brand-chip-dot" style={{ background: b.color }} />
+            {b.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 
   return (
@@ -115,33 +218,26 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
             <div className="bo-subtitle">{current.sub}</div>
           </div>
           <div style={{display:'flex', gap:8}}>
-            <button className="btn btn-outline"><Icon name="download" size={14}/> Exportar</button>
-            <button className="btn btn-primary"><Icon name="plus" size={14}/> Nuevo</button>
+            <button className="btn btn-outline" onClick={() => exportAppStateAsJson(appState)} title="Descargar todo el estado como JSON">
+              <Icon name="download" size={14}/> Exportar
+            </button>
+            {newKind && (
+              <button className="btn btn-primary" onClick={onNew} title="Crear un nuevo item en este tab">
+                <Icon name="plus" size={14}/> Nuevo
+              </button>
+            )}
           </div>
         </div>
 
         {tab === 'products' && (
           <>
-            <div className="bo-toolbar">
-              <div className="bo-search">
-                <Icon name="search" size={14} />
-                <input placeholder="Buscar productos…" value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-                  <div className="brand-chips" style={{padding:0, margin:0}}>
-                <button className={'brand-chip' + (brandFilter === 'all' ? ' active' : '')} onClick={() => setBrandFilter('all')}>Todas</button>
-                {brands.filter(b => b.id !== 'bomedia').map(b => (
-                  <button key={b.id} className={'brand-chip' + (brandFilter === b.id ? ' active' : '')} onClick={() => setBrandFilter(b.id)} style={brandFilter === b.id ? {} : { color: b.color }}>
-                    <span className="brand-chip-dot" style={{ background: b.color }} />
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {renderToolbar('Buscar productos…')}
 
             <div className="product-grid">
               {filteredProducts.map(p => {
                 const brand = brands.find(b => b.id === p.brand) || { label: p.brand, color: '#999' };
                 const hidden = isItemHidden && isItemHidden('products', p.id);
+                const lp = (typeof window.getLocalizedProduct === 'function') ? window.getLocalizedProduct(p, lang) : p;
                 return (
                   <div key={p.id} className={'product-card' + (hidden ? ' hidden-for-user' : '')} onClick={() => setEditing({ kind: 'product', item: p })}>
                     <button
@@ -152,18 +248,18 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
                       <Icon name={hidden ? 'eyeOff' : 'eye'} size={14} />
                     </button>
                     <div className="product-card-img">
-                      <img src={p.img} alt={p.name} />
+                      <img src={p.img} alt={lp.name} />
                       <span className="product-card-badge" style={{background: 'color-mix(in oklch, ' + brand.color + ' 15%, transparent)', color: brand.color}}>
                         {p.badge}
                       </span>
                     </div>
                     <div className="product-card-body">
                       <div className={'product-card-brand ' + p.brand}>{brand.label}</div>
-                      <div className="product-card-name">{p.name}</div>
-                      <div className="product-card-desc">{p.desc}</div>
+                      <div className="product-card-name">{lp.name}</div>
+                      <div className="product-card-desc">{lp.desc}</div>
                       <div className="product-card-footer">
                         <span>{p.area}</span>
-                        <span className="price">{p.price}</span>
+                        <span className="price">{lp.price || p.price}</span>
                       </div>
                     </div>
                   </div>
@@ -198,8 +294,10 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
         )}
 
         {tab === 'texts' && (
+          <>
+          {renderToolbar('Buscar textos…')}
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
-            {texts.map(t => {
+            {filteredTexts.map(t => {
               const brand = brands.find(b => b.id === t.brand) || brands[brands.length - 1] || { label: t.brand, color: '#999' };
               const hidden = isItemHidden && isItemHidden('prewrittenTexts', t.id);
               return (
@@ -210,8 +308,8 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
                   </button>
                   <div className={'lib-icon ' + t.brand} style={{width:36, height:36}}>{t.icon}</div>
                   <div>
-                    <div style={{fontSize:14, fontWeight:500, marginBottom:3}}>{t.name}</div>
-                    <div style={{fontSize:12, color:'var(--text-muted)', lineHeight:1.5}}>{t.text}</div>
+                    <div style={{fontSize:14, fontWeight:500, marginBottom:3}}>{L(t, 'name')}</div>
+                    <div style={{fontSize:12, color:'var(--text-muted)', lineHeight:1.5}}>{L(t, 'text')}</div>
                   </div>
                   <div style={{display:'flex', gap:4}}>
                     <span style={{fontSize:10, fontFamily:'var(--font-mono)', padding:'3px 8px', background:'color-mix(in oklch, ' + brand.color + ' 12%, transparent)', color:brand.color, borderRadius:4, fontWeight:500}}>{brand.label}</span>
@@ -220,11 +318,14 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
               );
             })}
           </div>
+          </>
         )}
 
         {tab === 'templates' && (
+          <>
+          {renderToolbar('Buscar plantillas…')}
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
-            {templates.map(t => {
+            {filteredTemplates.map(t => {
               const brand = brands.find(b => b.id === t.brand) || brands[brands.length - 1] || { label: t.brand, color: '#999' };
               const colorClassMap = { blue:'oklch(60% 0.18 255)', purple:'oklch(60% 0.18 295)', orange:'oklch(65% 0.17 45)', teal:'oklch(60% 0.12 180)', gray:'oklch(70% 0.02 250)' };
               const tplColor = colorClassMap[t.colorClass || 'gray'];
@@ -247,8 +348,8 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
                       )}
                     </div>
                   </div>
-                  <div style={{fontSize:16, fontWeight:600, marginBottom:4, letterSpacing:'-0.01em'}}>{t.name}</div>
-                  <div style={{fontSize:12, color:'var(--text-muted)', lineHeight:1.5, marginBottom:12}}>{t.desc}</div>
+                  <div style={{fontSize:16, fontWeight:600, marginBottom:4, letterSpacing:'-0.01em'}}>{L(t, 'name')}</div>
+                  <div style={{fontSize:12, color:'var(--text-muted)', lineHeight:1.5, marginBottom:12}}>{L(t, 'desc')}</div>
                   <div style={{display:'flex', gap:6, paddingTop:12, borderTop:'1px solid var(--border)'}}>
                     <button
                       className="btn btn-outline"
@@ -270,11 +371,14 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
               );
             })}
           </div>
+          </>
         )}
 
         {tab === 'blocks' && (
+          <>
+          {renderToolbar('Buscar bloques…')}
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
-            {blocks.map(b => {
+            {filteredBlocks.map(b => {
               const brand = brands.find(x => x.id === b.brand) || brands[brands.length - 1] || { label: b.brand, color: '#999' };
               const hidden = isItemHidden && isItemHidden('standaloneBlocks', b.id);
               return (
@@ -285,8 +389,8 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
                   </button>
                   <div className={'lib-icon ' + b.brand} style={{width:40, height:40, fontSize:16}}>{b.icon}</div>
                   <div>
-                    <div style={{fontSize:14, fontWeight:500}}>{b.title}</div>
-                    <div style={{fontSize:11, color:'var(--text-muted)'}} className="serif">{b.section}</div>
+                    <div style={{fontSize:14, fontWeight:500}}>{L(b, 'title')}</div>
+                    <div style={{fontSize:11, color:'var(--text-muted)'}} className="serif">{L(b, 'desc') || b.section}</div>
                   </div>
                   <span style={{fontSize:11, fontFamily:'var(--font-mono)', color:'var(--text-muted)'}}>{b.type || b.blockType}</span>
                   <button className="btn btn-ghost" style={{fontSize:12}} onClick={e => { e.stopPropagation(); setEditing({ kind: 'standalone', item: b }); }}>Editar</button>
@@ -294,6 +398,85 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
               );
             })}
           </div>
+          </>
+        )}
+
+        {tab === 'composed' && (
+          <>
+          {renderToolbar('Buscar bloques compuestos…')}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
+            {filteredComposed.map(c => {
+              const cBrand = c.brand || c.brandStrip;
+              const brand = brands.find(x => x.id === cBrand) || brands[brands.length - 1] || { label: cBrand || 'mix', color: '#999' };
+              const colorClassMap = { blue:'oklch(60% 0.18 255)', purple:'oklch(60% 0.18 295)', orange:'oklch(65% 0.17 45)', teal:'oklch(60% 0.12 180)', gray:'oklch(70% 0.02 250)' };
+              const tag = colorClassMap[c.colorTag || 'gray'];
+              const hidden = isItemHidden && isItemHidden('composedBlocks', c.id);
+              const productCount = Array.isArray(c.products) ? c.products.length : 0;
+              return (
+                <div key={c.id} className={'product-card' + (hidden ? ' hidden-for-user' : '')} style={{padding:18, cursor:'pointer', position:'relative', overflow:'hidden'}} onClick={() => setEditing({ kind: 'composed', item: c })}>
+                  <button className="card-visibility-btn" title={hidden ? 'Mostrarme' : 'Ocultarme'}
+                    onClick={e => { e.stopPropagation(); setItemHiddenForCurrentUser && setItemHiddenForCurrentUser('composedBlocks', c.id, !hidden); }}>
+                    <Icon name={hidden ? 'eyeOff' : 'eye'} size={14} />
+                  </button>
+                  <div style={{position:'absolute', left:0, top:0, bottom:0, width:4, background:tag}}/>
+                  <div style={{display:'flex', alignItems:'start', justifyContent:'space-between', marginBottom:10}}>
+                    <div style={{width:40, height:40, borderRadius:'var(--r-sm)', background:'color-mix(in oklch, ' + brand.color + ' 15%, transparent)', display:'grid', placeItems:'center', color:brand.color}}>
+                      <Icon name="box" size={18}/>
+                    </div>
+                    <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4}}>
+                      <span className="mono" style={{fontSize:10, color:'var(--text-muted)'}}>{productCount} prod · {c.blockType}</span>
+                      {c.priceRange && (
+                        <span style={{fontSize:10, color:'var(--text-muted)', fontStyle:'italic'}}>{c.priceRange}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{fontSize:15, fontWeight:600, marginBottom:4, letterSpacing:'-0.01em'}}>{L(c, 'title')}</div>
+                  <div style={{fontSize:12, color:'var(--text-muted)', lineHeight:1.5, marginBottom:10}}>{L(c, 'desc')}</div>
+                  <div style={{fontSize:11, color:'var(--text-subtle)', lineHeight:1.5, paddingTop:10, borderTop:'1px solid var(--border)', maxHeight:60, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical'}}>
+                    {(L(c, 'introText') || '').slice(0, 180)}{(L(c, 'introText') || '').length > 180 ? '…' : ''}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </>
+        )}
+
+        {tab === 'ctas' && (
+          <>
+          {renderToolbar('Buscar CTAs…')}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:14}}>
+            {filteredCtas.map(c => {
+              const hidden = isItemHidden && isItemHidden('ctaBlocks', c.id);
+              const bullets = Array.isArray(c.bullets) ? c.bullets.filter(x => x && x.trim()) : [];
+              return (
+                <div key={c.id} className={'product-card' + (hidden ? ' hidden-for-user' : '')} style={{padding:16, cursor:'pointer', position:'relative'}} onClick={() => setEditing({ kind: 'cta', item: c })}>
+                  <button className="card-visibility-btn" title={hidden ? 'Mostrarme' : 'Ocultarme'}
+                    onClick={e => { e.stopPropagation(); setItemHiddenForCurrentUser && setItemHiddenForCurrentUser('ctaBlocks', c.id, !hidden); }}>
+                    <Icon name={hidden ? 'eyeOff' : 'eye'} size={14} />
+                  </button>
+                  <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:10}}>
+                    <div style={{width:36, height:36, borderRadius:'var(--r-sm)', background: c.bg || '#1d4ed8', display:'grid', placeItems:'center', color: c.color || '#fff'}}>
+                      <Icon name="zap" size={16}/>
+                    </div>
+                    <div style={{minWidth:0, flex:1}}>
+                      <div style={{fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.name || c.title || c.text || '(sin nombre)'}</div>
+                      <div style={{fontSize:10, color:'var(--text-muted)', fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.url || 'sin url'}</div>
+                    </div>
+                  </div>
+                  {c.title && <div style={{fontSize:12, fontWeight:500, marginBottom:4}}>{c.title}</div>}
+                  {c.subtitle && <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:6, lineHeight:1.45}}>{c.subtitle}</div>}
+                  {bullets.length > 0 && (
+                    <div style={{fontSize:10, color:'var(--text-muted)', marginBottom:8}}>{bullets.length} bullet{bullets.length === 1 ? '' : 's'}</div>
+                  )}
+                  <div style={{paddingTop:10, borderTop:'1px solid var(--border)'}}>
+                    <span style={{display:'inline-block', padding:'5px 12px', fontSize:11, fontWeight:600, color: c.color || '#fff', background: c.bg || '#1d4ed8', borderRadius:5}}>{c.text || 'Más información'}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
 
         {tab === 'users' && isAdmin && (
@@ -307,21 +490,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
         {tab === 'ai' && <AISettingsPanel appState={appState} setAppState={setAppState} />}
 
         {tab === 'settings' && (
-          <div style={{maxWidth:620, display:'flex', flexDirection:'column', gap:14}}>
-            <div className="product-card" style={{padding:20}}>
-              <div style={{fontSize:14, fontWeight:600, marginBottom:8}}>Sincronización</div>
-              <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:10}}>Estado: <span style={{color:'var(--success)'}}>●</span> conectado · Supabase · último sync hace 2 min</div>
-              <div style={{display:'flex', gap:6}}>
-                <button className="btn btn-outline" style={{fontSize:12}}>Forzar sync</button>
-                <button className="btn btn-ghost" style={{fontSize:12}}>Exportar JSON</button>
-              </div>
-            </div>
-            <div className="product-card" style={{padding:20}}>
-              <div style={{fontSize:14, fontWeight:600, marginBottom:8}}>Acceso backoffice</div>
-              <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:10}}>Protegido con contraseña. Sesión activa 24h.</div>
-              <button className="btn btn-outline" style={{fontSize:12}}>Cambiar contraseña</button>
-            </div>
-          </div>
+          <SettingsPanel appState={appState} setAppState={setAppState} />
         )}
       </main>
 
@@ -336,12 +505,14 @@ function BackofficeDrawer({ editing, onClose, onSave }) {
   const [data, setData] = React.useState(item);
 
   const titleByKind = {
-    product: 'Editar producto',
-    brand: 'Editar marca',
-    text: 'Editar texto',
-    template: 'Editar plantilla',
-    standalone: 'Editar bloque',
-    user: 'Editar usuario',
+    product: editing.isNew ? 'Nuevo producto' : 'Editar producto',
+    brand: editing.isNew ? 'Nueva marca' : 'Editar marca',
+    text: editing.isNew ? 'Nuevo texto' : 'Editar texto',
+    template: editing.isNew ? 'Nueva plantilla' : 'Editar plantilla',
+    standalone: editing.isNew ? 'Nuevo bloque' : 'Editar bloque',
+    composed: editing.isNew ? 'Nuevo compuesto' : 'Editar compuesto',
+    cta: editing.isNew ? 'Nuevo CTA' : 'Editar CTA',
+    user: editing.isNew ? 'Nuevo usuario' : 'Editar usuario',
   };
 
   return (
@@ -353,7 +524,7 @@ function BackofficeDrawer({ editing, onClose, onSave }) {
             <div style={{fontSize:10, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.1em', color:'var(--text-muted)', marginBottom:4}}>{titleByKind[kind]}</div>
             <div className="bo-drawer-title">{data.name || data.label || data.title}</div>
           </div>
-          {['product','text'].includes(kind) && (
+          {['product','text','composed'].includes(kind) && (
             <div className="lang-pill">
               {['es','fr','de','en','nl'].map(l => (
                 <button key={l} className={lang === l ? 'active' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>
@@ -378,6 +549,12 @@ function BackofficeDrawer({ editing, onClose, onSave }) {
           )}
           {kind === 'standalone' && (
             <StandaloneBOEdit data={data} setData={setData} />
+          )}
+          {kind === 'composed' && (
+            <ComposedBOEdit data={data} setData={setData} lang={lang} />
+          )}
+          {kind === 'cta' && (
+            <CtaSavedBOEdit data={data} setData={setData} />
           )}
           {kind === 'user' && (
             <UserBOEdit data={data} setData={setData} />
@@ -440,12 +617,9 @@ function ProductBOEdit({ data, setData, lang }) {
         </div>
         <div style={{display:'grid', gridTemplateColumns:'120px 1fr', gap:14, alignItems:'start'}}>
           <div style={{aspectRatio:'1', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', padding:8, display:'grid', placeItems:'center', border:'1px solid var(--border)'}}>
-            <img src={data.img} alt="" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}}/>
+            {data.img ? <img src={data.img} alt="" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.display='none'; }}/> : <Icon name="box" size={32}/>}
           </div>
-          <div>
-            <input className="input mono" style={{fontSize:11, marginBottom:6}} value={data.img || ''} onChange={e => setBase('img', e.target.value)} />
-            <button className="btn btn-outline" style={{fontSize:12}}><Icon name="download" size={12}/> Subir nueva</button>
-          </div>
+          <ImageUploadInput value={data.img || ''} onChange={v => setBase('img', v)} prefix={'products/' + (data.id || 'new')} placeholder="https://… o pulsa Subir" />
         </div>
       </div>
 
@@ -576,8 +750,8 @@ function BrandBOEdit({ data, setData }) {
       </div>
 
       <div className="field">
-        <label className="field-label">URL del logo</label>
-        <input className="input mono" style={{fontSize:11}} value={data.logo || ''} placeholder="https://…/logo.png" onChange={e => set('logo', e.target.value)} />
+        <label className="field-label">Logo</label>
+        <ImageUploadInput value={data.logo || ''} onChange={v => set('logo', v)} prefix={'brands/' + (data.id || 'new')} placeholder="https://…/logo.png" />
       </div>
 
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
@@ -874,6 +1048,204 @@ function TemplateBOEdit({ data, setData }) {
               </button>
             </div>
           )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* Editor for composedBlocks — pre-built combos like "intro + 2 productos +
+   brand strip". Title/desc/introText are localized; price range is a free
+   string per item; products[] is a small list of product ids that depend on
+   the chosen blockType (single = 1, pair = 2, trio = 3). */
+function ComposedBOEdit({ data, setData, lang }) {
+  const set = (k, v) => setData({...data, [k]: v});
+  const trVal = (field) => {
+    if (lang === 'es' || !data.i18n || !data.i18n[lang]) return data[field] || '';
+    return (data.i18n[lang][field] !== undefined && data.i18n[lang][field] !== null) ? data.i18n[lang][field] : (data[field] || '');
+  };
+  const setTr = (field, value) => {
+    if (lang === 'es') { set(field, value); return; }
+    const i18n = Object.assign({}, data.i18n || {});
+    i18n[lang] = Object.assign({}, i18n[lang] || {}, { [field]: value });
+    set('i18n', i18n);
+  };
+  const placeholder = (field) => (lang === 'es' || !data[field]) ? '' : data[field];
+
+  // The number of product slots depends on the selected blockType
+  const slotCount = data.blockType === 'product_trio' ? 3 : data.blockType === 'product_single' ? 1 : 2;
+  const products = Array.isArray(data.products) ? data.products : [];
+  const setSlot = (i, value) => {
+    const next = products.slice();
+    next[i] = value;
+    set('products', next.slice(0, slotCount));
+  };
+  React.useEffect(() => {
+    // Trim/pad the products array to match the slot count whenever blockType changes
+    if (products.length !== slotCount) {
+      const padded = products.slice(0, slotCount);
+      while (padded.length < slotCount) padded.push('');
+      set('products', padded);
+    }
+  }, [data.blockType]);
+
+  const allProducts = (typeof window !== 'undefined' && window.PRODUCTS) || PRODUCTS || [];
+  const allBrands = (typeof window !== 'undefined' && window.BRANDS) || BRANDS || [];
+
+  return (
+    <>
+      <div className="field">
+        <label className="field-label">Título ({lang.toUpperCase()})</label>
+        <input className="input" value={trVal('title')} placeholder={placeholder('title')} onChange={e => setTr('title', e.target.value)} />
+      </div>
+      <div className="field">
+        <label className="field-label">Descripción corta ({lang.toUpperCase()})</label>
+        <input className="input" value={trVal('desc')} placeholder={placeholder('desc')} onChange={e => setTr('desc', e.target.value)} />
+      </div>
+      <div className="field">
+        <label className="field-label">Texto introductorio ({lang.toUpperCase()})</label>
+        <textarea className="textarea" rows={5} value={trVal('introText')} placeholder={placeholder('introText')} onChange={e => setTr('introText', e.target.value)} />
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        <div className="field">
+          <label className="field-label">Tipo de bloque <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
+          <select className="select" value={data.blockType || 'product_pair'} onChange={e => set('blockType', e.target.value)}>
+            <option value="product_single">1 producto</option>
+            <option value="product_pair">2 productos</option>
+            <option value="product_trio">3 productos</option>
+          </select>
+        </div>
+        <div className="field">
+          <label className="field-label">Strip de marca <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
+          <select className="select" value={data.brandStrip || 'none'} onChange={e => set('brandStrip', e.target.value)}>
+            <option value="none">Sin strip</option>
+            {allBrands.filter(b => b.id !== 'bomedia').map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="field">
+        <label className="field-label">Productos · {slotCount}</label>
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          {Array.from({length: slotCount}).map((_, i) => (
+            <select key={i} className="select" value={products[i] || ''} onChange={e => setSlot(i, e.target.value)}>
+              <option value="">— Slot {i+1} —</option>
+              {allProducts.filter(p => p.visible !== false).map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.brand})</option>
+              ))}
+            </select>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        <div className="field">
+          <label className="field-label">Rango de precio <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
+          <input className="input" value={data.priceRange || ''} placeholder="ej. 9.300 € + 13.900 €" onChange={e => set('priceRange', e.target.value)} />
+        </div>
+        <div className="field">
+          <label className="field-label">Color tag <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
+          <select className="select" value={data.colorTag || 'gray'} onChange={e => set('colorTag', e.target.value)}>
+            <option value="blue">Azul</option>
+            <option value="purple">Morado</option>
+            <option value="orange">Naranja</option>
+            <option value="teal">Teal</option>
+            <option value="gray">Gris</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer'}}>
+          <input type="checkbox" checked={!!data.includeHero} onChange={e => set('includeHero', e.target.checked)} />
+          <span>Incluye hero</span>
+        </label>
+        <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer'}}>
+          <input type="checkbox" checked={!!data.includeSteps} onChange={e => set('includeSteps', e.target.checked)} />
+          <span>Incluye pasos (PimPam)</span>
+        </label>
+      </div>
+    </>
+  );
+}
+
+/* Saved CTA editor — same fields as the inline CTA block but with an extra
+   `name` so the user can identify it in the picker / library list. */
+function CtaSavedBOEdit({ data, setData }) {
+  const set = (k, v) => setData({...data, [k]: v});
+  const bullets = Array.isArray(data.bullets) ? data.bullets : [];
+  const setBullet = (i, v) => set('bullets', bullets.map((x, idx) => idx === i ? v : x));
+  const addBullet = () => set('bullets', [...bullets, '']);
+  const delBullet = (i) => set('bullets', bullets.filter((_, idx) => idx !== i));
+  return (
+    <>
+      <div className="field">
+        <label className="field-label">Nombre interno (lo verás en el picker)</label>
+        <input className="input" value={data.name || ''} onChange={e => set('name', e.target.value)} placeholder="Ej. CTA Demo presencial" />
+      </div>
+      <div className="field">
+        <label className="field-label">Título (opcional)</label>
+        <input className="input" value={data.title || ''} onChange={e => set('title', e.target.value)} placeholder="Ej. ¿Listo para empezar?" />
+      </div>
+      <div className="field">
+        <label className="field-label">Subtítulo (opcional)</label>
+        <textarea className="textarea" rows={2} value={data.subtitle || ''} onChange={e => set('subtitle', e.target.value)} placeholder="Línea descriptiva debajo del título" />
+      </div>
+      <div className="field">
+        <div className="field-label-row">
+          <label className="field-label">Lista ({bullets.length})</label>
+          <button className="btn btn-ghost" style={{fontSize:11}} onClick={addBullet}><Icon name="plus" size={11}/> Añadir bullet</button>
+        </div>
+        <div style={{display:'flex', flexDirection:'column', gap:4}}>
+          {bullets.map((bp, i) => (
+            <div key={i} style={{display:'flex', gap:4, alignItems:'center'}}>
+              <input className="input" style={{flex:1}} value={bp} onChange={e => setBullet(i, e.target.value)} placeholder={'Bullet ' + (i+1)} />
+              <button className="icon-btn" onClick={() => delBullet(i)} title="Eliminar"><Icon name="trash" size={11}/></button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label className="field-label">Texto del botón</label>
+        <input className="input" value={data.text || ''} onChange={e => set('text', e.target.value)} placeholder="Más información" />
+      </div>
+      <div className="field">
+        <label className="field-label">URL de destino</label>
+        <input className="input mono" style={{fontSize:11}} value={data.url || ''} onChange={e => set('url', e.target.value)} placeholder="https://… o mailto:…" />
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        <div className="field">
+          <label className="field-label">Fondo del botón</label>
+          <div style={{display:'flex', gap:6, alignItems:'center'}}>
+            <input type="color" value={data.bg || '#1d4ed8'} onChange={e => set('bg', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}}/>
+            <input className="input mono" style={{fontSize:11}} value={data.bg || '#1d4ed8'} onChange={e => set('bg', e.target.value)} />
+          </div>
+        </div>
+        <div className="field">
+          <label className="field-label">Texto del botón</label>
+          <div style={{display:'flex', gap:6, alignItems:'center'}}>
+            <input type="color" value={data.color || '#ffffff'} onChange={e => set('color', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}}/>
+            <input className="input mono" style={{fontSize:11}} value={data.color || '#ffffff'} onChange={e => set('color', e.target.value)} />
+          </div>
+        </div>
+      </div>
+      <div className="field">
+        <label className="field-label">Alineación</label>
+        <select className="select" value={data.align || 'center'} onChange={e => set('align', e.target.value)}>
+          <option value="left">Izquierda</option>
+          <option value="center">Centro</option>
+          <option value="right">Derecha</option>
+        </select>
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        <div className="field">
+          <label className="field-label">Fondo de panel</label>
+          <input className="input mono" style={{fontSize:11}} value={data.panelBg || ''} placeholder="transparent" onChange={e => set('panelBg', e.target.value || 'transparent')} />
+        </div>
+        <div className="field">
+          <label className="field-label">Borde de panel</label>
+          <input className="input mono" style={{fontSize:11}} value={data.panelBorder || ''} placeholder="transparent" onChange={e => set('panelBorder', e.target.value || 'transparent')} />
         </div>
       </div>
     </>
@@ -1249,6 +1621,8 @@ function AISettingsPanel({ appState, setAppState }) {
         <AiStylesAdminOverview appState={appState} setAppState={setAppState} />
       </div>
 
+      <AutoTranslatePanel appState={appState} setAppState={setAppState} />
+
       <div style={{padding:'12px 14px', background:'color-mix(in oklch, var(--accent) 8%, var(--bg-panel))', borderRadius:'var(--r-sm)', fontSize:11.5, color:'var(--text-muted)', lineHeight:1.6}}>
         <strong style={{color:'var(--text)'}}>Cómo usarlo:</strong> abre cualquier bloque de texto en el Compositor → botón <Icon name="sparkles" size={11}/> IA → describe la idea → el asistente genera el párrafo en el idioma activo, siguiendo el tono fijado para tu usuario.
       </div>
@@ -1256,4 +1630,525 @@ function AISettingsPanel({ appState, setAppState }) {
   );
 }
 
-Object.assign(window, { Backoffice, AISettingsPanel, UsersPanel, UserBOEdit, AiStylesAdminOverview, MyToneIaPanel });
+/* ──────────────── Auto-translate panel ────────────────
+   Bulk-fills missing i18n.<lang>.<field> for templates, composed blocks,
+   prewritten texts and standalone blocks. Products are intentionally
+   excluded (machine names should never be translated). */
+function AutoTranslatePanel({ appState, setAppState }) {
+  const [langs, setLangs] = React.useState({ fr:true, de:true, en:true, nl:true });
+  const [overwrite, setOverwrite] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
+  const [progress, setProgress] = React.useState('');
+  const [result, setResult] = React.useState('');
+
+  // Build the list of items missing translations. Each entry is
+  // { kind, idx, field, text } and the panel summary shows totals per kind.
+  function gatherWork(state, targetLangs, force) {
+    const work = [];
+    const push = (kind, idx, field, text, i18n) => {
+      if (!text || typeof text !== 'string') return;
+      const missing = targetLangs.filter(L => force || !i18n || !i18n[L] || !i18n[L][field]);
+      if (missing.length > 0) work.push({ kind, idx, field, text, missing });
+    };
+    (state.templates || []).forEach((t, i) => {
+      push('templates', i, 'name', t.name, t.i18n);
+      push('templates', i, 'desc', t.desc, t.i18n);
+    });
+    (state.composedBlocks || []).forEach((c, i) => {
+      push('composedBlocks', i, 'title', c.title, c.i18n);
+      push('composedBlocks', i, 'desc', c.desc, c.i18n);
+      push('composedBlocks', i, 'introText', c.introText, c.i18n);
+    });
+    (state.prewrittenTexts || []).forEach((p, i) => {
+      push('prewrittenTexts', i, 'name', p.name, p.i18n);
+      push('prewrittenTexts', i, 'text', p.text, p.i18n);
+    });
+    (state.standaloneBlocks || []).forEach((s, i) => {
+      push('standaloneBlocks', i, 'title', s.title, s.i18n);
+      push('standaloneBlocks', i, 'desc', s.desc, s.i18n);
+    });
+    return work;
+  }
+
+  const targetLangs = ['fr','de','en','nl'].filter(L => langs[L]);
+  const pendingWork = gatherWork(appState, targetLangs, overwrite);
+  const summary = pendingWork.reduce((acc, w) => {
+    acc[w.kind] = (acc[w.kind] || 0) + 1;
+    return acc;
+  }, {});
+  const totalMissing = pendingWork.reduce((n, w) => n + w.missing.length, 0);
+
+  async function run() {
+    if (running) return;
+    if (!appState.openaiKey) { setResult('Falta la API key de OpenAI más arriba.'); return; }
+    if (targetLangs.length === 0) { setResult('Selecciona al menos un idioma.'); return; }
+    const work = pendingWork;
+    if (work.length === 0) { setResult('No hay nada que traducir — todo está completo.'); return; }
+    setRunning(true);
+    setResult('');
+    // Batch in chunks of ~10 items per request — text bodies can be long, so
+    // smaller chunks keep us safely under the model's max_tokens budget.
+    const CHUNK = 10;
+    const chunks = [];
+    for (let i = 0; i < work.length; i += CHUNK) chunks.push(work.slice(i, i + CHUNK));
+    const allTranslations = []; // [{ workItem, byLang }]
+    try {
+      for (let ci = 0; ci < chunks.length; ci++) {
+        setProgress('Lote ' + (ci+1) + '/' + chunks.length + '…');
+        const items = chunks[ci].map((w, i) => ({ i, text: w.text }));
+        const res = await callOpenAITranslateBatch({ items, targetLangs });
+        chunks[ci].forEach((w, i) => {
+          const byLang = res[String(i)] || {};
+          allTranslations.push({ workItem: w, byLang });
+        });
+      }
+      // Apply all translations in one setState pass.
+      setAppState(prev => {
+        const next = { ...prev };
+        const byKind = {};
+        allTranslations.forEach(({ workItem, byLang }) => {
+          const { kind, idx, field, missing } = workItem;
+          if (!next[kind]) return;
+          if (!byKind[kind]) byKind[kind] = next[kind].slice();
+          const arr = byKind[kind];
+          const item = { ...arr[idx] };
+          item.i18n = { ...(item.i18n || {}) };
+          missing.forEach(L => {
+            const v = byLang[L];
+            if (typeof v !== 'string' || !v) return;
+            item.i18n[L] = { ...(item.i18n[L] || {}), [field]: v };
+          });
+          arr[idx] = item;
+        });
+        Object.keys(byKind).forEach(k => { next[k] = byKind[k]; });
+        return next;
+      });
+      setResult('✓ Traducidos ' + work.length + ' campos en ' + targetLangs.length + ' idiomas.');
+    } catch (e) {
+      setResult('Error: ' + (e.message || String(e)));
+    } finally {
+      setRunning(false);
+      setProgress('');
+    }
+  }
+
+  return (
+    <div className="product-card" style={{padding:20}}>
+      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:4}}>
+        <Icon name="sparkles" size={18}/>
+        <div style={{fontSize:15, fontWeight:600}}>Auto-traducir nombres</div>
+      </div>
+      <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12, lineHeight:1.6}}>
+        Rellena las traducciones que falten (FR / DE / EN / NL) en plantillas, bloques compuestos, textos predefinidos y bloques sueltos. <strong>Los nombres de máquinas y marcas se preservan literalmente</strong>. Los productos no se tocan.
+      </div>
+
+      <div style={{display:'flex', gap:14, flexWrap:'wrap', marginBottom:12}}>
+        {['fr','de','en','nl'].map(L => (
+          <label key={L} style={{display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer'}}>
+            <input type="checkbox" checked={!!langs[L]} onChange={e => setLangs(prev => ({...prev, [L]: e.target.checked}))} />
+            <span>{(LANG_LABELS && LANG_LABELS[L]) || L.toUpperCase()}</span>
+          </label>
+        ))}
+        <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer', marginLeft:'auto'}}>
+          <input type="checkbox" checked={overwrite} onChange={e => setOverwrite(e.target.checked)} />
+          <span>Sobrescribir traducciones existentes</span>
+        </label>
+      </div>
+
+      <div style={{fontSize:11.5, color:'var(--text-muted)', marginBottom:10, padding:'8px 10px', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)'}}>
+        Pendiente: <strong style={{color:'var(--text)'}}>{pendingWork.length}</strong> campos / <strong style={{color:'var(--text)'}}>{totalMissing}</strong> traducciones
+        {Object.keys(summary).length > 0 && (
+          <span style={{marginLeft:8, color:'var(--text-muted)'}}>
+            ({Object.entries(summary).map(([k,v]) => k + ':' + v).join(' · ')})
+          </span>
+        )}
+      </div>
+
+      <div style={{display:'flex', gap:8, alignItems:'center'}}>
+        <button
+          className="btn btn-primary"
+          onClick={run}
+          disabled={running || pendingWork.length === 0 || !appState.openaiKey}
+          style={{fontSize:13}}
+        >
+          {running ? (progress || 'Traduciendo…') : 'Traducir ahora'}
+        </button>
+        {result && (
+          <span style={{fontSize:12, color: result.startsWith('Error') ? 'var(--danger)' : 'var(--success)', fontWeight:500}}>
+            {result}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────── Image upload input ──────────────
+   Drop-in replacement for a plain URL <input>: shows the URL field plus a
+   "Subir" button that opens the file picker, uploads to Supabase Storage,
+   and writes the resulting public URL back through onChange. Renders a 60px
+   thumbnail when there's a value so the user sees what's loaded. */
+function ImageUploadInput({ value, onChange, placeholder, prefix }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const [libOpen, setLibOpen] = React.useState(false);
+  const fileRef = React.useRef(null);
+  const onPick = () => fileRef.current && fileRef.current.click();
+  const appState = (typeof window !== 'undefined' && window.__appState) || {};
+  const setAppState = (typeof window !== 'undefined' && window.__setAppState) || (() => {});
+  const Lib = (typeof window !== 'undefined' && window.ImageLibraryModal) || null;
+  const onFile = (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const upload = (typeof window !== 'undefined' && typeof window.uploadImage === 'function') ? window.uploadImage : null;
+    if (!upload) {
+      setErr('Subida no disponible (módulo de uploads no cargado)');
+      return;
+    }
+    setBusy(true); setErr('');
+    upload(f, { prefix })
+      .then(url => {
+        onChange(url);
+        // Track in the global library so it shows up next time the user
+        // picks an image (deduped by url).
+        try {
+          if (typeof window.recordUploadedImage === 'function') {
+            window.recordUploadedImage({ url, name: f.name || '', size: f.size, addedAt: Date.now() });
+          }
+        } catch (e) {}
+      })
+      .catch(e2 => setErr(e2.message || String(e2)))
+      .finally(() => setBusy(false));
+  };
+  const showThumb = value && /^(https?:|data:)/i.test(value);
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:6}}>
+      <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+        <input className="input" style={{flex:'1 1 200px', minWidth:140}} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder || 'https://… pegar URL'} />
+        {Lib && (
+          <button type="button" className="btn btn-outline" style={{fontSize:11, whiteSpace:'nowrap', padding:'6px 10px'}} onClick={() => setLibOpen(true)} disabled={busy} title="Elegir de la biblioteca de imágenes">
+            <Icon name="copy" size={11}/> Biblioteca
+          </button>
+        )}
+        <button type="button" className="btn btn-outline" style={{fontSize:11, whiteSpace:'nowrap', padding:'6px 10px'}} onClick={onPick} disabled={busy} title="Subir un archivo nuevo">
+          {busy ? 'Subiendo…' : <><Icon name="download" size={11}/> Subir</>}
+        </button>
+        <input type="file" accept="image/*" ref={fileRef} onChange={onFile} style={{display:'none'}} />
+      </div>
+      {showThumb && (
+        <img src={value} alt="" style={{width:64, height:64, objectFit:'contain', borderRadius:4, border:'1px solid var(--border)', background:'var(--bg-sunken)', padding:4}} onError={e => { e.target.style.display='none'; }} />
+      )}
+      {err && <div style={{fontSize:11, color:'var(--danger)', lineHeight:1.4}}>{err}</div>}
+      {libOpen && Lib && (
+        <Lib appState={appState} setAppState={setAppState} onPick={url => { onChange(url); setLibOpen(false); }} onClose={() => setLibOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+/* ────────────── Image library modal ──────────────
+   Modal that shows a grid of every image URL the app already knows about
+   (product photos, brand logos, hero images from blocks/standalones, plus
+   the user's prior uploads). User can pick one or upload a new one. The
+   chosen URL is returned via `onPick(url)`. */
+
+/* Collect every distinct image URL we can find across the appState. The
+   resulting list is unique by URL and roughly grouped by source so the
+   modal can show "Subidas" first, then "Productos", etc. */
+function _collectKnownImages(appState) {
+  const items = []
+  const seen = new Set()
+  const push = (url, source, label) => {
+    if (!url || typeof url !== 'string') return
+    const u = url.trim()
+    if (!u || !/^https?:|^data:/i.test(u)) return
+    if (seen.has(u)) return
+    seen.add(u)
+    items.push({ url: u, source, label: label || '' })
+  }
+  // Recent uploads first
+  ;(appState.uploadedImages || []).slice().reverse().forEach(it => push(it.url, 'upload', it.name))
+  // Products: img + per-lang i18n images
+  ;(appState.products || []).forEach(p => {
+    push(p.img, 'product', p.name)
+    if (p.i18n) Object.values(p.i18n).forEach(loc => push(loc.img, 'product', p.name))
+  })
+  // Brand logos
+  ;(appState.brands || []).forEach(b => push(b.logo, 'brand', b.label))
+  // Hero images on standalone blocks
+  ;(appState.standaloneBlocks || []).forEach(sb => push(sb.config && sb.config.heroImage, 'hero', sb.title))
+  return items
+}
+
+/* Append an upload to appState.uploadedImages. Idempotent (deduped by URL).
+   Called from ImageUploadInput once a fetch completes. */
+function _registerRecorder(setAppState) {
+  window.recordUploadedImage = (item) => {
+    if (!item || !item.url || !setAppState) return
+    setAppState(prev => {
+      const list = Array.isArray(prev.uploadedImages) ? prev.uploadedImages : []
+      if (list.some(x => x.url === item.url)) return prev
+      // Cap at 200 — older entries get dropped to keep state size sane
+      const next = [...list, item].slice(-200)
+      return Object.assign({}, prev, { uploadedImages: next })
+    })
+  }
+}
+
+function ImageLibraryModal({ appState, setAppState, onPick, onClose }) {
+  React.useEffect(() => { _registerRecorder(setAppState) }, [setAppState])
+  const [filter, setFilter] = React.useState('all')
+  const [search, setSearch] = React.useState('')
+  const items = React.useMemo(() => _collectKnownImages(appState || {}), [appState])
+  const filtered = items.filter(it =>
+    (filter === 'all' || it.source === filter) &&
+    (!search || (it.label || '').toLowerCase().includes(search.toLowerCase()))
+  )
+  const groups = [
+    { id: 'all', label: 'Todas', count: items.length },
+    { id: 'upload', label: 'Subidas', count: items.filter(i => i.source === 'upload').length },
+    { id: 'product', label: 'Productos', count: items.filter(i => i.source === 'product').length },
+    { id: 'brand', label: 'Marcas', count: items.filter(i => i.source === 'brand').length },
+    { id: 'hero', label: 'Heroes', count: items.filter(i => i.source === 'hero').length },
+  ]
+  return (
+    <>
+      <div className="bo-drawer-overlay" onClick={onClose} style={{zIndex:50}}/>
+      <div style={{position:'fixed', top:'5%', left:'50%', transform:'translateX(-50%)', width:'min(900px, 92vw)', maxHeight:'90vh', background:'var(--bg-panel)', border:'1px solid var(--border)', borderRadius:'var(--r-md)', display:'flex', flexDirection:'column', zIndex:51, overflow:'hidden'}}>
+        <div style={{padding:'14px 18px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12}}>
+          <Icon name="copy" size={18}/>
+          <div style={{fontSize:14, fontWeight:600, flex:1}}>Biblioteca de imágenes</div>
+          <button className="icon-btn" onClick={onClose}><Icon name="x" size={16}/></button>
+        </div>
+        <div style={{padding:'10px 18px', borderBottom:'1px solid var(--border)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+          <div className="bo-search" style={{flex:'1 1 200px', minWidth:200}}>
+            <Icon name="search" size={14}/>
+            <input placeholder="Buscar por nombre…" value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+          <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
+            {groups.map(g => (
+              <button key={g.id} className={'brand-chip' + (filter === g.id ? ' active' : '')} onClick={() => setFilter(g.id)}>
+                {g.label} <span className="mono" style={{opacity:0.6}}>{g.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{padding:14, borderBottom:'1px solid var(--border)'}}>
+          <ImageUploadInput value="" onChange={url => { if (url) onPick(url) }} prefix="library" placeholder="Subir nueva imagen — se añadirá a la biblioteca" />
+        </div>
+        <div style={{padding:14, overflowY:'auto', flex:1}}>
+          {filtered.length === 0 && (
+            <div style={{padding:'40px 20px', textAlign:'center', color:'var(--text-muted)', fontSize:13}}>
+              {items.length === 0 ? 'No hay imágenes todavía. Sube una para empezar.' : 'Sin resultados con ese filtro.'}
+            </div>
+          )}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))', gap:10}}>
+            {filtered.map((it, i) => (
+              <button key={i} onClick={() => onPick(it.url)} title={it.url}
+                style={{padding:0, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', background:'var(--bg-sunken)', cursor:'pointer', overflow:'hidden', display:'flex', flexDirection:'column'}}
+              >
+                <div style={{aspectRatio:'4/3', display:'grid', placeItems:'center', overflow:'hidden', background:'#fff'}}>
+                  <img src={it.url} alt={it.label} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.opacity = 0.2; }}/>
+                </div>
+                <div style={{padding:'6px 8px', fontSize:10, color:'var(--text-muted)', textAlign:'left', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                  <span style={{fontWeight:600, color:'var(--text)'}}>{it.label || '—'}</span>
+                  <span style={{marginLeft:6, padding:'1px 5px', background:'var(--bg-panel)', borderRadius:3, fontSize:9}}>{it.source}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/* ────────────── Backup & restore helpers ──────────────
+   Stable, tool-free way to dump the entire appState to a JSON file the user
+   can download. Used by both the header "Exportar" button and the Settings
+   panel. */
+function exportAppStateAsJson(appState) {
+  try {
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const blob = new Blob([JSON.stringify(appState || {}, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bomedia-backup-' + ts + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return true;
+  } catch (e) {
+    console.error('Export failed:', e);
+    alert('No se pudo exportar: ' + (e.message || e));
+    return false;
+  }
+}
+
+/* Merge an imported state into the existing one without overwriting anything.
+   For each known array collection, append items whose `id` doesn't already
+   exist. Scalars (passwords, openaiKey…) are left untouched in merge mode. */
+function _mergeImportedState(prev, incoming) {
+  if (!incoming || typeof incoming !== 'object') return prev;
+  const next = Object.assign({}, prev);
+  const collections = ['products','brands','prewrittenTexts','templates','standaloneBlocks','composedBlocks','users'];
+  collections.forEach(key => {
+    if (!Array.isArray(incoming[key])) return;
+    const existing = Array.isArray(prev[key]) ? prev[key] : [];
+    const ids = new Set(existing.map(x => x && x.id).filter(Boolean));
+    const newOnes = incoming[key].filter(x => x && x.id && !ids.has(x.id));
+    if (newOnes.length > 0) next[key] = existing.concat(newOnes);
+  });
+  return next;
+}
+
+/* ────────────── Settings tab ──────────────
+   Backup (download JSON), Restore (upload JSON in either replace-or-merge
+   mode), and Recargar desde la nube (re-pulls Supabase). The old "Forzar
+   sync" was a placeholder — the auto-save effect already pushes changes to
+   Supabase 1.5s after every edit, so a manual force is rarely useful. */
+function SettingsPanel({ appState, setAppState }) {
+  const fileRef = React.useRef(null);
+  const [importMode, setImportMode] = React.useState('merge');
+  const [status, setStatus] = React.useState('');
+  const [reloading, setReloading] = React.useState(false);
+
+  const setMsg = (m, isErr) => setStatus({ text: m, err: !!isErr });
+
+  const reloadFromCloud = () => {
+    if (typeof loadFromSupabase !== 'function') {
+      setMsg('Supabase no está disponible.', true);
+      return;
+    }
+    setReloading(true);
+    setMsg('Recargando desde la nube…');
+    loadFromSupabase().then(data => {
+      if (!data) { setMsg('La nube no devolvió datos.', true); return; }
+      let merged = data;
+      if (typeof mergeI18nFromDefaults === 'function') merged = mergeI18nFromDefaults(merged);
+      if (typeof migrateMboDtf === 'function') merged = migrateMboDtf(merged);
+      setAppState(merged);
+      setMsg('Estado recargado desde Supabase.');
+    }).catch(e => setMsg('Error: ' + (e.message || e), true))
+      .finally(() => setReloading(false));
+  };
+
+  const onPickFile = () => fileRef.current && fileRef.current.click();
+
+  const onFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      let parsed;
+      try { parsed = JSON.parse(ev.target.result); }
+      catch (err) { setMsg('JSON inválido: ' + err.message, true); return; }
+      if (!parsed || typeof parsed !== 'object') { setMsg('JSON no es un objeto.', true); return; }
+      if (importMode === 'replace') {
+        const ok = window.confirm(
+          'Reemplazar TODO el estado actual con el JSON importado.\n\n' +
+          'Esta acción es destructiva: borrará productos, plantillas, textos, bloques, marcas y usuarios actuales.\n\n' +
+          '¿Continuar?'
+        );
+        if (!ok) return;
+        let next = parsed;
+        if (typeof mergeI18nFromDefaults === 'function') next = mergeI18nFromDefaults(next);
+        if (typeof migrateMboDtf === 'function') next = migrateMboDtf(next);
+        setAppState(next);
+        setMsg('Estado reemplazado con el JSON importado (' + (file.name || 'archivo') + ').');
+      } else {
+        // Merge: append new items by id, never overwrite scalar fields like
+        // passwords or the OpenAI key.
+        const counts = {};
+        const collections = ['products','brands','prewrittenTexts','templates','standaloneBlocks','composedBlocks','users'];
+        collections.forEach(k => {
+          if (!Array.isArray(parsed[k])) return;
+          const ids = new Set(((appState && appState[k]) || []).map(x => x && x.id).filter(Boolean));
+          counts[k] = parsed[k].filter(x => x && x.id && !ids.has(x.id)).length;
+        });
+        const total = Object.values(counts).reduce((n, x) => n + x, 0);
+        if (total === 0) { setMsg('Nada que añadir — todos los items del JSON ya existen por id.'); return; }
+        setAppState(prev => _mergeImportedState(prev, parsed));
+        const breakdown = Object.entries(counts).filter(([,v]) => v > 0).map(([k,v]) => v + ' ' + k).join(', ');
+        setMsg('Fusionados ' + total + ' items nuevos: ' + breakdown);
+      }
+    };
+    reader.onerror = () => setMsg('No se pudo leer el archivo.', true);
+    reader.readAsText(file);
+  };
+
+  // Stats summary (helps the user see roughly what's in there)
+  const stat = (k) => Array.isArray(appState && appState[k]) ? appState[k].length : 0;
+
+  return (
+    <div style={{maxWidth:680, display:'flex', flexDirection:'column', gap:14}}>
+      <div className="product-card" style={{padding:20}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:4}}>
+          <Icon name="download" size={18}/>
+          <div style={{fontSize:15, fontWeight:600}}>Exportar JSON</div>
+        </div>
+        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12, lineHeight:1.6}}>
+          Descarga el estado completo: <strong>{stat('products')}</strong> productos, <strong>{stat('templates')}</strong> plantillas, <strong>{stat('prewrittenTexts')}</strong> textos, <strong>{stat('standaloneBlocks')}</strong> bloques, <strong>{stat('composedBlocks')}</strong> compuestos, <strong>{stat('brands')}</strong> marcas, <strong>{stat('users')}</strong> usuarios. Sirve como respaldo o para mover datos entre entornos.
+        </div>
+        <button className="btn btn-primary" style={{fontSize:12}} onClick={() => { exportAppStateAsJson(appState); setMsg('Backup descargado.'); }}>
+          <Icon name="download" size={12}/> Descargar backup
+        </button>
+      </div>
+
+      <div className="product-card" style={{padding:20}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:4}}>
+          <Icon name="copy" size={18}/>
+          <div style={{fontSize:15, fontWeight:600}}>Importar JSON</div>
+        </div>
+        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12, lineHeight:1.6}}>
+          Carga un JSON previamente exportado (o creado a mano).
+        </div>
+        <div style={{display:'flex', gap:14, marginBottom:12, flexWrap:'wrap'}}>
+          <label style={{display:'flex', gap:6, alignItems:'flex-start', cursor:'pointer', maxWidth:280}}>
+            <input type="radio" checked={importMode === 'merge'} onChange={() => setImportMode('merge')} style={{marginTop:3}} />
+            <span>
+              <strong style={{fontSize:12.5}}>Fusionar</strong>
+              <div style={{fontSize:11, color:'var(--text-muted)', lineHeight:1.5}}>Añade items nuevos por id. No toca lo existente.</div>
+            </span>
+          </label>
+          <label style={{display:'flex', gap:6, alignItems:'flex-start', cursor:'pointer', maxWidth:280}}>
+            <input type="radio" checked={importMode === 'replace'} onChange={() => setImportMode('replace')} style={{marginTop:3}} />
+            <span>
+              <strong style={{fontSize:12.5, color:'var(--danger)'}}>Reemplazar todo</strong>
+              <div style={{fontSize:11, color:'var(--text-muted)', lineHeight:1.5}}>Sobrescribe todo el estado. Pide confirmación.</div>
+            </span>
+          </label>
+        </div>
+        <input type="file" accept="application/json,.json" ref={fileRef} onChange={onFile} style={{display:'none'}} />
+        <button className="btn btn-outline" style={{fontSize:12}} onClick={onPickFile}>
+          <Icon name="copy" size={12}/> Elegir archivo JSON…
+        </button>
+      </div>
+
+      <div className="product-card" style={{padding:20}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:4}}>
+          <Icon name="database" size={18}/>
+          <div style={{fontSize:15, fontWeight:600}}>Sincronización con Supabase</div>
+        </div>
+        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12, lineHeight:1.6}}>
+          Los cambios se guardan en la nube automáticamente unos segundos después de cada edición. Usa <em>Recargar desde la nube</em> si has editado los datos desde otro dispositivo y quieres descartar los cambios locales no sincronizados.
+        </div>
+        <button className="btn btn-outline" style={{fontSize:12}} onClick={reloadFromCloud} disabled={reloading}>
+          {reloading ? 'Recargando…' : 'Recargar desde la nube'}
+        </button>
+      </div>
+
+      {status && status.text && (
+        <div style={{padding:'10px 14px', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', fontSize:12, color: status.err ? 'var(--danger)' : 'var(--success)', fontWeight:500}}>
+          {status.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { Backoffice, AISettingsPanel, AutoTranslatePanel, SettingsPanel, UsersPanel, UserBOEdit, AiStylesAdminOverview, MyToneIaPanel, ComposedBOEdit, CtaSavedBOEdit, ImageUploadInput, ImageLibraryModal, exportAppStateAsJson, blankItemForKind });

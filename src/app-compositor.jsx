@@ -259,6 +259,36 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
       <div className="sidebar-body scroll">
         {onLibraryTab && (
           <>
+            {/* Layout / sections: multi-column containers. Always shown so the
+                user can build emails with side-by-side blocks. */}
+            <div className="group">
+              <div className="group-header">
+                Layout <span className="count mono">2</span>
+              </div>
+              <button className="lib-item" onClick={() => onAddBlock({ type: 'section_2col' })}>
+                <div className="lib-icon mix"><Icon name="grid" size={14} /></div>
+                <div style={{minWidth:0}}>
+                  <div className="lib-title">2 columnas</div>
+                  <div className="lib-sub">Sección con dos columnas iguales (50/50). Stack en móvil.</div>
+                  <div className="lib-meta">
+                    <span className="lib-badge" style={{background:'color-mix(in oklch, var(--accent) 12%, transparent)', color:'var(--accent-ink)', fontWeight:600}}>layout</span>
+                  </div>
+                </div>
+                <span className="lib-add"><Icon name="plus" size={14} /></span>
+              </button>
+              <button className="lib-item" onClick={() => onAddBlock({ type: 'section_3col' })}>
+                <div className="lib-icon mix"><Icon name="grid" size={14} /></div>
+                <div style={{minWidth:0}}>
+                  <div className="lib-title">3 columnas</div>
+                  <div className="lib-sub">Sección con tres columnas iguales (33/33/33). Stack en móvil.</div>
+                  <div className="lib-meta">
+                    <span className="lib-badge" style={{background:'color-mix(in oklch, var(--accent) 12%, transparent)', color:'var(--accent-ink)', fontWeight:600}}>layout</span>
+                  </div>
+                </div>
+                <span className="lib-add"><Icon name="plus" size={14} /></span>
+              </button>
+            </div>
+
             {filteredProducts.length > 0 && (
               <div className="group">
                 <div className="group-header">
@@ -266,23 +296,26 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                 </div>
                 {filteredProducts.map(p => {
                   const brand = BRANDS.find(b => b.id === p.brand);
+                  // Resolve per-lang fields (price, badge, etc.) — name typically
+                  // isn't translated but getLocalizedProduct falls back gracefully.
+                  const lp = (typeof window.getLocalizedProduct === 'function') ? window.getLocalizedProduct(p, lang) : p;
                   return (
                     <button key={p.id} className="lib-item"
                             draggable
                             onClick={() => onAddBlock({ type: 'product', productId: p.id })}>
                       <div className={'lib-icon ' + p.brand}>
-                        <img src={p.img} alt="" style={{width:28,height:28,objectFit:'contain'}} />
+                        <img src={lp.img} alt="" style={{width:28,height:28,objectFit:'contain'}} />
                       </div>
                       <div style={{minWidth:0}}>
-                        <div className="lib-title">{p.name}</div>
-                        <div className="lib-sub">{p.area} · <span className="mono">{p.price}</span></div>
+                        <div className="lib-title">{lp.name}</div>
+                        <div className="lib-sub">{lp.area} · <span className="mono">{lp.price}</span></div>
                         <div className="lib-meta">
                           {brand && (
                             <span className="lib-brand-tag" style={{ color: brand.color }}>{brand.label}</span>
                           )}
-                          {p.badge && (
+                          {lp.badge && (
                             <span className="lib-badge" style={{ background: p.badgeBg || 'var(--bg-sunken)', color: p.badgeColor || 'var(--text-muted)' }}>
-                              {p.badge}
+                              {lp.badge}
                             </span>
                           )}
                         </div>
@@ -301,6 +334,8 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                 </div>
                 {filteredComposed.map(c => {
                   const brand = BRANDS.find(b => b.id === c.brand);
+                  const cTitle = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(c, 'title', lang) : c.title;
+                  const cDesc = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(c, 'desc', lang) : c.desc;
                   return (
                     <button key={c.id} className="lib-item"
                             onClick={() => onAddBlock({ type: 'composed', composedId: c.id })}>
@@ -310,9 +345,9 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                       <div style={{minWidth:0}}>
                         <div className="lib-title">
                           {c.colorTag && <span className={'lib-color-tag ' + c.colorTag} />}
-                          {c.title}
+                          {cTitle}
                         </div>
-                        <div className="lib-sub">{c.desc}</div>
+                        <div className="lib-sub">{cDesc}</div>
                         <div className="lib-meta">
                           {brand && (
                             <span className="lib-brand-tag" style={{ color: brand.color }}>{brand.label}</span>
@@ -338,12 +373,13 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                 </div>
                 {filteredStandalone.map(b => {
                   const brand = BRANDS.find(x => x.id === b.brand);
+                  const bTitle = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(b, 'title', lang) : b.title;
                   return (
                     <button key={b.id} className="lib-item"
                             onClick={() => onAddBlock({ type: b.type, standaloneId: b.id })}>
                       <div className={'lib-icon ' + b.brand}>{b.icon}</div>
                       <div style={{minWidth:0}}>
-                        <div className="lib-title">{b.title}</div>
+                        <div className="lib-title">{bTitle}</div>
                         <div className="lib-sub serif">{b.section}</div>
                         <div className="lib-meta">
                           {brand && b.brand !== 'mix' && (
@@ -367,6 +403,8 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
             </div>
             {filteredTemplates.map(t => {
               const brand = BRANDS.find(b => b.id === t.brand);
+              const tName = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(t, 'name', lang) : t.name;
+              const tDesc = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(t, 'desc', lang) : t.desc;
               return (
                 <button key={t.id} className="lib-item"
                         onClick={() => onAddBlock({ type: 'template', templateId: t.id })}>
@@ -374,9 +412,9 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                   <div style={{minWidth:0}}>
                     <div className="lib-title">
                       {t.colorClass && <span className={'lib-color-tag ' + t.colorClass} />}
-                      {t.name}
+                      {tName}
                     </div>
-                    <div className="lib-sub">{t.desc}</div>
+                    <div className="lib-sub">{tDesc}</div>
                     <div className="lib-meta">
                       {brand && (
                         <span className="lib-brand-tag" style={{ color: brand.color }}>{brand.label}</span>
@@ -413,13 +451,15 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
             </button>
             {filteredTexts.map(t => {
               const brand = BRANDS.find(b => b.id === t.brand);
+              const tName = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(t, 'name', lang) : t.name;
+              const tText = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(t, 'text', lang) : t.text;
               return (
                 <button key={t.id} className="lib-item"
                         onClick={() => onAddBlock({ type: 'text', textId: t.id })}>
                   <div className={'lib-icon ' + t.brand}>{t.icon}</div>
                   <div style={{minWidth:0}}>
-                    <div className="lib-title">{t.name}</div>
-                    <div className="lib-sub">{(t.text || '').slice(0, 60)}…</div>
+                    <div className="lib-title">{tName}</div>
+                    <div className="lib-sub">{(tText || '').slice(0, 60)}…</div>
                     <div className="lib-meta">
                       {brand && t.brand !== 'mix' && (
                         <span className="lib-brand-tag" style={{ color: brand.color }}>{brand.label}</span>
@@ -597,7 +637,44 @@ function InlineTextBlock({ block, text, selected, lang, onUpdate }) {
   );
 }
 
-function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, onMove, onDuplicate, lang }) {
+function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, onMove, onReorder, onDuplicate, lang, onOpenInnerPalette, onPickColumnAdd, appState, isInner, selectedId }) {
+  // Drag-drop reorder. The block becomes draggable only when the user
+  // mousedowns on the .block-handle so clicks elsewhere (inputs, buttons,
+  // selects) keep working normally. `dropEdge` is 'top'/'bottom' to draw a
+  // marker showing where the dragged block will land.
+  const [dragArmed, setDragArmed] = React.useState(false);
+  const [dropEdge, setDropEdge] = React.useState(null);
+  const armDrag = () => setDragArmed(true);
+  const disarmDrag = () => setDragArmed(false);
+  const handleDragStart = (e) => {
+    if (!onReorder) { e.preventDefault(); return; }
+    try {
+      e.dataTransfer.setData('text/x-block-id', block.id);
+      e.dataTransfer.setData('text/plain', block.id);
+      e.dataTransfer.effectAllowed = 'move';
+    } catch (err) {}
+  };
+  const handleDragEnd = () => { setDragArmed(false); setDropEdge(null); };
+  const handleDragOver = (e) => {
+    if (!onReorder) return;
+    const sourceId = (e.dataTransfer && e.dataTransfer.types.includes('text/x-block-id')) ? 'block' : null;
+    if (!sourceId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isTopHalf = (e.clientY - rect.top) < rect.height / 2;
+    setDropEdge(isTopHalf ? 'top' : 'bottom');
+  };
+  const handleDragLeave = () => setDropEdge(null);
+  const handleDrop = (e) => {
+    if (!onReorder) return;
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/x-block-id') || e.dataTransfer.getData('text/plain');
+    setDropEdge(null);
+    if (!sourceId || sourceId === block.id) return;
+    onReorder(sourceId, block.id, dropEdge === 'bottom' ? 'after' : 'before');
+  };
+
   // Read live data published from appState — never the frozen module-level
   // copy (otherwise blocks added from templates with newer product IDs show
   // "no seleccionado").
@@ -637,6 +714,7 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
     header: 'Cabecera',
     footer: 'Pie',
     composed: 'Bloque compuesto',
+    section: 'Sección · ' + ((block.columns && block.columns.length) || 2) + ' columnas',
   }[block.type] || block.type;
 
   // Treat the three legacy hero variants as a single "Hero" concept for
@@ -659,11 +737,112 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
     ? standaloneSource.find(s => s.id === sbLookupId)
     : null;
 
+  // ── Section block — multi-column layout container ──
+  // Renders columns side-by-side. Each column has its own list of blocks
+  // (rendered with isInner=true so they don't get the up/down arrows that
+  // wouldn't make sense inside a column for v1) and a "+ Añadir" button
+  // that opens the command palette targeting that column.
+  if (block.type === 'section' && Array.isArray(block.columns)) {
+    const cols = block.columns;
+    return (
+      <div
+        className={'block section-block' + (selected ? ' selected' : '')}
+        draggable={dragArmed}
+        onClick={() => onSelect(block.id)}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="block-bar">
+          <span
+            className="block-handle"
+            title="Arrastrar para reordenar"
+            onMouseDown={armDrag}
+            onMouseUp={disarmDrag}
+            style={{cursor: dragArmed ? 'grabbing' : 'grab'}}
+          >
+            <Icon name="drag" size={14} />
+          </span>
+          <span className="block-tag">
+            <Icon name="grid" size={12} />
+            {typeLabel}
+          </span>
+          <div className="block-bar-actions">
+            {!isInner && onMove && (
+              <>
+                <button className="block-action" disabled={idx === 0} onClick={e => { e.stopPropagation(); onMove(block.id, -1); }} title="Subir">
+                  <Icon name="arrowUp" size={13} />
+                </button>
+                <button className="block-action" disabled={idx === total - 1} onClick={e => { e.stopPropagation(); onMove(block.id, 1); }} title="Bajar">
+                  <Icon name="arrowDown" size={13} />
+                </button>
+              </>
+            )}
+            <button className="block-action" onClick={e => { e.stopPropagation(); onDuplicate(block.id); }} title="Duplicar">
+              <Icon name="copy" size={13} />
+            </button>
+            <button className="block-action danger" onClick={e => { e.stopPropagation(); onDelete(block.id); }} title="Eliminar">
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        </div>
+
+        <div className="section-cols" style={{display:'grid', gridTemplateColumns:`repeat(${cols.length}, 1fr)`, gap:12, padding:12, background:'var(--bg-sunken)'}}>
+          {cols.map((col, ci) => (
+            <div key={ci} className="section-col" style={{display:'flex', flexDirection:'column', gap:8, minWidth:0}}>
+              {(col.blocks || []).map((ib, ii) => (
+                <BlockCard
+                  key={ib.id}
+                  block={ib}
+                  idx={ii}
+                  total={(col.blocks || []).length}
+                  selected={selectedId === ib.id}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onUpdate={onUpdate}
+                  onDelete={onDelete}
+                  onDuplicate={onDuplicate}
+                  onOpenInnerPalette={onOpenInnerPalette}
+                  onPickColumnAdd={onPickColumnAdd}
+                  appState={appState}
+                  lang={lang}
+                  isInner
+                />
+              ))}
+              <ColumnAddPicker
+                onPick={spec => onPickColumnAdd && onPickColumnAdd(block.id, ci, spec)}
+                columnLabel={ci + 1}
+                appState={appState}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={'block' + (selected ? ' selected' : '')} onClick={() => onSelect(block.id)}>
+    <div
+      className={'block' + (selected ? ' selected' : '') + (dropEdge ? ' drop-' + dropEdge : '')}
+      draggable={dragArmed}
+      onClick={() => onSelect(block.id)}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {selected && <span className="block-edit-hint">Editando</span>}
       <div className="block-bar">
-        <span className="block-handle" title="Arrastrar">
+        <span
+          className="block-handle"
+          title="Arrastrar para reordenar"
+          onMouseDown={armDrag}
+          onMouseUp={disarmDrag}
+          style={{cursor: dragArmed ? 'grabbing' : 'grab'}}
+        >
           <Icon name="drag" size={14} />
         </span>
         <span className="block-tag">
@@ -690,12 +869,16 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
             <Icon name="settings" size={12} />
             {selected ? 'Editando' : 'Editar'}
           </button>
-          <button className="block-action" disabled={idx === 0} onClick={e => { e.stopPropagation(); onMove(block.id, -1); }} title="Subir">
-            <Icon name="arrowUp" size={13} />
-          </button>
-          <button className="block-action" disabled={idx === total - 1} onClick={e => { e.stopPropagation(); onMove(block.id, 1); }} title="Bajar">
-            <Icon name="arrowDown" size={13} />
-          </button>
+          {!isInner && onMove && (
+            <>
+              <button className="block-action" disabled={idx === 0} onClick={e => { e.stopPropagation(); onMove(block.id, -1); }} title="Subir">
+                <Icon name="arrowUp" size={13} />
+              </button>
+              <button className="block-action" disabled={idx === total - 1} onClick={e => { e.stopPropagation(); onMove(block.id, 1); }} title="Bajar">
+                <Icon name="arrowDown" size={13} />
+              </button>
+            </>
+          )}
           <button className="block-action" onClick={e => { e.stopPropagation(); onDuplicate(block.id); }} title="Duplicar">
             <Icon name="copy" size={13} />
           </button>
@@ -706,6 +889,45 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
       </div>
 
       <div className="block-body">
+        {block.type === 'image' && (
+          <div style={{padding:12, textAlign: block.align || 'center'}}>
+            {block.src ? (
+              <img src={block.src} alt={block.alt || ''} style={{maxWidth:'100%', maxHeight:200, borderRadius:6, display:'inline-block'}} />
+            ) : (
+              <div style={{padding:'30px 20px', background:'var(--bg-sunken)', border:'1px dashed var(--border-strong)', borderRadius:6, color:'var(--text-muted)', fontSize:12}}>
+                Imagen sin URL — ábrelo en Editar para elegir una de la biblioteca o subir una nueva
+              </div>
+            )}
+          </div>
+        )}
+        {block.type === 'cta' && (() => {
+          const bullets = Array.isArray(block.bullets) ? block.bullets.filter(x => x && String(x).trim()) : [];
+          const hasPanel = (block.panelBg && block.panelBg !== 'transparent') || (block.panelBorder && block.panelBorder !== 'transparent');
+          return (
+            <div style={{padding:12}}>
+              <div style={{textAlign: block.align || 'center', background: hasPanel ? (block.panelBg || 'transparent') : 'transparent', border: hasPanel ? '1px solid ' + (block.panelBorder || 'transparent') : 'none', borderRadius: hasPanel ? 8 : 0, padding: hasPanel ? '16px 18px' : 0}}>
+                {block.title && <div style={{fontSize:16, fontWeight:700, color:'#1a1918', marginBottom:6, lineHeight:1.3}}>{block.title}</div>}
+                {block.subtitle && <div style={{fontSize:13, color:'#475569', marginBottom:10, lineHeight:1.5}}>{block.subtitle}</div>}
+                {bullets.length > 0 && (
+                  <ul style={{margin:'0 0 14px', padding:'0 0 0 18px', fontSize:13, color:'#334155', lineHeight:1.55, textAlign:'left', display:'inline-block'}}>
+                    {bullets.map((b, i) => <li key={i} style={{margin:'0 0 4px'}}>{b}</li>)}
+                  </ul>
+                )}
+                <div>
+                  <a href={block.url || '#'} target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.preventDefault()}
+                    style={{display:'inline-block', padding:'10px 22px', fontSize:13, fontWeight:600, color: block.color || '#fff', background: block.bg || '#1d4ed8', borderRadius:6, textDecoration:'none'}}
+                  >
+                    {block.text || 'Más información'}
+                  </a>
+                </div>
+                {!block.url && (
+                  <div style={{marginTop:6, fontSize:11, color:'var(--text-muted)'}}>Sin URL — añádela en Editar</div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {block.type === 'text' && (
           <InlineTextBlock
             block={block}
@@ -934,7 +1156,155 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
   );
 }
 
-function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, setSelectedId, onOpenPalette, onAddBlock, onClearBlocks, onExpandPreview, editingTemplate, onExitTemplateEdit, onSaveCurrentTemplate, onSaveAsTemplate, lang, variant, emailHtml }) {
+/* Restricted picker shown inside section columns. Only offers single-cell
+   block types that look right in a narrow column: text, single product,
+   image, video, CTA. The full command palette (with heroes, brand strips,
+   pairs, trios, etc.) is hidden because those don't fit a column. */
+function ColumnAddPicker({ onPick, columnLabel, appState }) {
+  const [open, setOpen] = React.useState(false);
+  const [mode, setMode] = React.useState(null); // null | 'product' | 'image' | 'text' | 'video' | 'cta'
+  const wrapRef = React.useRef(null);
+
+  // Click-outside to close
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setMode(null); } };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const close = () => { setOpen(false); setMode(null); };
+  const pick = (spec) => { onPick(spec); close(); };
+
+  const products = (appState && appState.products) || (typeof window !== 'undefined' && window.PRODUCTS) || [];
+  const prewrittenTexts = (appState && appState.prewrittenTexts) || (typeof window !== 'undefined' && window.PREWRITTEN_TEXTS) || [];
+  const standaloneBlocks = (appState && appState.standaloneBlocks) || (typeof window !== 'undefined' && window.STANDALONE_BLOCKS) || [];
+  const ctaBlocks = (appState && appState.ctaBlocks) || [];
+  const videoStandalones = standaloneBlocks.filter(s => (s.blockType === 'video' || s.blockType === 'freebird' || s.type === 'video' || s.type === 'freebird') && s.visible !== false);
+
+  const popoverStyle = { position:'absolute', top:'100%', left:0, marginTop:4, background:'var(--bg-panel)', border:'1px solid var(--border-strong)', borderRadius:'var(--r-sm)', boxShadow:'0 10px 30px rgba(0,0,0,0.18), var(--sh-md)', zIndex:50, padding:6, maxHeight:320, overflowY:'auto' };
+
+  return (
+    <div ref={wrapRef} onClick={e => e.stopPropagation()} style={{position:'relative'}}>
+      <button
+        className="btn btn-ghost"
+        style={{fontSize:11, justifyContent:'center', border:'1px dashed var(--border-strong)', background:'var(--bg-panel)', width:'100%'}}
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); setMode(null); }}
+        title={'Añadir un bloque a la columna ' + columnLabel}
+      >
+        <Icon name="plus" size={11} /> Añadir a columna {columnLabel}
+      </button>
+
+      {open && mode == null && (
+        <div style={Object.assign({}, popoverStyle, { minWidth:220, display:'flex', flexDirection:'column', gap:2 })}>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => setMode('text')}>
+            <Icon name="text" size={14}/> Texto
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => setMode('product')}>
+            <Icon name="box" size={14}/> Producto
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => setMode('image')}>
+            <Icon name="copy" size={14}/> Imagen
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => setMode('video')}>
+            <Icon name="layers" size={14}/> Vídeo
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => setMode('cta')}>
+            <Icon name="zap" size={14}/> Botón CTA
+          </button>
+        </div>
+      )}
+
+      {open && mode === 'product' && (
+        <div style={Object.assign({}, popoverStyle, { minWidth:260 })}>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase'}}>Elige producto</div>
+          {products.filter(p => p.visible !== false).map(p => (
+            <button key={p.id} className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px'}}
+              onClick={() => pick({ type:'product', productId: p.id })}
+            >
+              <img src={p.img} alt="" style={{width:24, height:24, objectFit:'contain', marginRight:6}}/>
+              <span style={{flex:1, textAlign:'left', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{p.name}</span>
+              <span className="mono" style={{fontSize:10, color:'var(--text-muted)'}}>{p.brand}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && mode === 'text' && (
+        <div style={Object.assign({}, popoverStyle, { minWidth:280 })}>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase'}}>Texto</div>
+          <button className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px', borderBottom:'1px solid var(--border)'}}
+            onClick={() => pick({ type:'text-blank' })}>
+            <Icon name="plus" size={11} style={{marginRight:6}}/> <strong>Texto en blanco</strong>
+          </button>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase', marginTop:4}}>Pre-escritos</div>
+          {prewrittenTexts.filter(t => t.visible !== false).map(t => (
+            <button key={t.id} className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px'}}
+              onClick={() => pick({ type:'text', textId: t.id })}>
+              <span style={{marginRight:6, fontSize:14}}>{t.icon || '📝'}</span>
+              <span style={{flex:1, textAlign:'left', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{t.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && mode === 'video' && (
+        <div style={Object.assign({}, popoverStyle, { minWidth:280 })}>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase'}}>Vídeo</div>
+          <button className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px', borderBottom:'1px solid var(--border)'}}
+            onClick={() => pick({ type:'video' })}>
+            <Icon name="plus" size={11} style={{marginRight:6}}/> <strong>Vídeo en blanco</strong>
+          </button>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase', marginTop:4}}>Vídeos guardados</div>
+          {videoStandalones.length === 0 && (
+            <div style={{padding:'8px', fontSize:10, color:'var(--text-muted)', fontStyle:'italic'}}>Aún no hay vídeos guardados — créalos en Backoffice → Bloques sueltos.</div>
+          )}
+          {videoStandalones.map(s => (
+            <button key={s.id} className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px'}}
+              onClick={() => pick({ type:'video', standaloneId: s.id })}>
+              <span style={{marginRight:6, fontSize:14}}>{s.icon || '▶'}</span>
+              <span style={{flex:1, textAlign:'left', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{s.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && mode === 'cta' && (
+        <div style={Object.assign({}, popoverStyle, { minWidth:280 })}>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase'}}>CTA</div>
+          <button className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px', borderBottom:'1px solid var(--border)'}}
+            onClick={() => pick({ type:'cta' })}>
+            <Icon name="plus" size={11} style={{marginRight:6}}/> <strong>CTA en blanco</strong>
+          </button>
+          <div style={{padding:'4px 6px', fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase', marginTop:4}}>CTAs guardados</div>
+          {ctaBlocks.filter(c => c.visible !== false).length === 0 && (
+            <div style={{padding:'8px', fontSize:10, color:'var(--text-muted)', fontStyle:'italic'}}>Aún no hay CTAs guardados — créalos en Backoffice → CTAs.</div>
+          )}
+          {ctaBlocks.filter(c => c.visible !== false).map(c => (
+            <button key={c.id} className="btn btn-ghost" style={{fontSize:11, justifyContent:'flex-start', width:'100%', padding:'6px 8px'}}
+              onClick={() => pick({ type:'cta', _ctaSourceId: c.id })}>
+              <Icon name="zap" size={12} style={{marginRight:6}}/>
+              <span style={{flex:1, textAlign:'left', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{c.name || c.title || c.text}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open && mode === 'image' && typeof window.ImageLibraryModal === 'function' && (
+        <window.ImageLibraryModal
+          appState={appState}
+          setAppState={(...args) => { if (typeof window.__setAppState === 'function') window.__setAppState(...args); }}
+          onPick={(url) => pick({ type:'image', _imgUrl: url })}
+          onClose={close}
+        />
+      )}
+    </div>
+  );
+}
+
+function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, selectedId, setSelectedId, onOpenPalette, onOpenInnerPalette, onAddBlock, onAddBlockToColumn, onClearBlocks, onExpandPreview, editingTemplate, onExitTemplateEdit, onSaveCurrentTemplate, onSaveAsTemplate, lang, variant, emailHtml, onUndo, onRedo, appState, onSetBlocks, onSetLang }) {
+  // AI Agent modal state — opens when user clicks the "✨ IA" button.
+  const [agentOpen, setAgentOpen] = React.useState(false);
   const liveTemplates = (typeof window !== 'undefined' && window.TEMPLATES) || TEMPLATES || [];
   const visibleTemplates = liveTemplates.filter(t => t.visible !== false).slice(0, 6);
   const [toast, setToast] = React.useState('');
@@ -1043,6 +1413,24 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, s
             </div>
           </div>
           <div style={{display:'flex', gap:8, position:'relative', flexWrap:'wrap', justifyContent:'flex-end'}}>
+            {onUndo && (
+              <button className="btn btn-ghost" onClick={onUndo} title="Deshacer (Ctrl+Z)" style={{padding:'6px 8px'}}>
+                <Icon name="undo" size={14} />
+              </button>
+            )}
+            {onRedo && (
+              <button className="btn btn-ghost" onClick={onRedo} title="Rehacer (Ctrl+Shift+Z)" style={{padding:'6px 8px'}}>
+                <Icon name="redo" size={14} />
+              </button>
+            )}
+            <button
+              className="btn btn-primary"
+              onClick={() => setAgentOpen(true)}
+              title="Pídele a la IA que cree o modifique el email"
+              style={{background:'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)', border:'none'}}
+            >
+              <Icon name="sparkles" size={14} /> IA
+            </button>
             <button className="btn btn-ghost" onClick={handleClear} title="Vaciar el lienzo y empezar uno nuevo">
               <Icon name="plus" size={14} /> Nuevo
             </button>
@@ -1084,6 +1472,18 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, s
             blocksCount={blocks.length}
           />
         )}
+        {agentOpen && (
+          <AiAgentModal
+            blocks={blocks}
+            lang={lang}
+            appState={appState}
+            onClose={() => setAgentOpen(false)}
+            onCommit={(work) => {
+              if (typeof onSetBlocks === 'function') onSetBlocks(work.blocks);
+              if (typeof onSetLang === 'function' && work.lang && work.lang !== lang) onSetLang(work.lang);
+            }}
+          />
+        )}
 
         {blocks.length === 0 ? (
           <div className="empty">
@@ -1097,12 +1497,14 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, s
               <div className="empty-templates">
                 {visibleTemplates.map(t => {
                   const brand = BRANDS.find(b => b.id === t.brand);
+                  const tName = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(t, 'name', lang) : t.name;
+                  const tDesc = (typeof window.getLocalizedText === 'function') ? window.getLocalizedText(t, 'desc', lang) : t.desc;
                   return (
                     <div key={t.id} className="empty-tpl"
                          onClick={() => onAddBlock({ type: 'template', templateId: t.id })}>
                       <div className={'empty-tpl-bar ' + (t.colorClass || 'gray')} />
-                      <div className="empty-tpl-name">{t.name}</div>
-                      <div className="empty-tpl-desc">{t.desc}</div>
+                      <div className="empty-tpl-name">{tName}</div>
+                      <div className="empty-tpl-desc">{tDesc}</div>
                       <div className="empty-tpl-meta">
                         {brand?.label || t.brand} · {((t.blocks && t.blocks.length) || (t.compositorBlocks && t.compositorBlocks.length) || 0)} bloques
                       </div>
@@ -1113,7 +1515,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, s
             )}
 
             <div className="empty-divider">o</div>
-            <button className="btn btn-accent" onClick={onOpenPalette}>
+            <button className="btn btn-accent" onClick={() => onOpenPalette()}>
               <Icon name="plus" size={14} /> Añadir primer bloque
             </button>
           </div>
@@ -1126,11 +1528,16 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, s
                   idx={i}
                   total={blocks.length}
                   selected={selectedId === b.id}
+                  selectedId={selectedId}
                   onSelect={setSelectedId}
                   onUpdate={onUpdate}
                   onDelete={onDelete}
                   onMove={onMove}
+                  onReorder={onReorder}
                   onDuplicate={onDuplicate}
+                  onOpenInnerPalette={onOpenInnerPalette}
+                  onPickColumnAdd={onAddBlockToColumn}
+                  appState={appState}
                   lang={lang}
                 />
                 {i < blocks.length - 1 && (
@@ -1140,7 +1547,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onDuplicate, selectedId, s
                 )}
               </React.Fragment>
             ))}
-            <div className="quick-add" onClick={onOpenPalette}>
+            <div className="quick-add" onClick={() => onOpenPalette()}>
               <Icon name="plus" size={14} />
               <span>Añadir bloque</span>
               <span className="mono" style={{fontSize:11, opacity:.6, marginLeft:8}}>⌘K</span>
@@ -1550,4 +1957,177 @@ function EmailPreviewModal({ html, lang, onClose }) {
   );
 }
 
-Object.assign(window, { Sidebar, Canvas, PreviewPanel, CommandPalette, EmailIframe, MiniProduct, BrandStripPreview, EmailPreviewModal, SaveAsTemplateModal });
+/* Modal that drives the AI agent. The user types a prompt in natural
+   language; the agent runs through OpenAI tool-use, mutating a working
+   copy of the canvas. We render a live log of steps (thinking → tool
+   call → tool result → final text) and only commit to the live state
+   when the agent finishes successfully. */
+function AiAgentModal({ blocks, lang, appState, onClose, onCommit }) {
+  const [prompt, setPrompt] = React.useState('');
+  const [running, setRunning] = React.useState(false);
+  const [steps, setSteps] = React.useState([]);
+  const [done, setDone] = React.useState(null); // { ok, finalText, work }
+  const inputRef = React.useRef(null);
+  const logRef = React.useRef(null);
+
+  React.useEffect(() => { inputRef.current && inputRef.current.focus(); }, []);
+  React.useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [steps, done]);
+
+  const examples = [
+    'Crea un email para vender la artisJet 5000U a un cliente alemán',
+    'Vacía el canvas y mete una sección de 2 columnas con MBO 3050 y MBO 4060',
+    'Traduce todo el texto del canvas al francés',
+    'Añade un CTA al final que diga "Reserva tu demo" enlazando a https://bomedia.es',
+    'Borra el último bloque',
+  ];
+
+  const run = async () => {
+    if (!prompt.trim()) return;
+    if (typeof window.runAgent !== 'function') {
+      setSteps([{ kind: 'error', error: 'Módulo del agente no cargado.' }]);
+      return;
+    }
+    setRunning(true);
+    setSteps([{ kind: 'user', text: prompt.trim() }]);
+    setDone(null);
+    try {
+      const result = await window.runAgent({
+        prompt: prompt.trim(),
+        ctx: { appState, blocks, lang },
+        onStep: (s) => setSteps(prev => [...prev, s]),
+      });
+      setDone(result);
+    } catch (err) {
+      setSteps(prev => [...prev, { kind: 'error', error: err.message || String(err) }]);
+      setDone({ ok: false, error: err.message || String(err) });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const commit = () => {
+    if (done && done.ok && done.work) onCommit(done.work);
+    onClose();
+  };
+
+  const renderStep = (s, i) => {
+    if (s.kind === 'user') return (
+      <div key={i} style={{padding:'8px 10px', background:'var(--bg-sunken)', borderRadius:6, fontSize:12.5, marginBottom:6}}>
+        <span style={{fontSize:10, fontWeight:700, color:'var(--accent)', marginRight:8}}>TÚ</span>
+        {s.text}
+      </div>
+    );
+    if (s.kind === 'thinking') return (
+      <div key={i} style={{fontSize:11, color:'var(--text-muted)', padding:'4px 10px', fontStyle:'italic'}}>
+        🤔 Pensando… (paso {(s.step || 0) + 1})
+      </div>
+    );
+    if (s.kind === 'tool') return (
+      <div key={i} style={{padding:'6px 10px', fontSize:11.5, fontFamily:'var(--font-mono)', background:'color-mix(in oklch, var(--accent) 6%, transparent)', borderRadius:4, marginBottom:4}}>
+        <span style={{color:'var(--accent-ink)', fontWeight:700}}>→ {s.name}</span>
+        <span style={{color:'var(--text-muted)', marginLeft:6}}>{(JSON.stringify(s.args) || '').slice(0, 200)}</span>
+      </div>
+    );
+    if (s.kind === 'tool_result') {
+      const ok = !/error/i.test(s.result || '');
+      return (
+        <div key={i} style={{padding:'4px 10px 4px 26px', fontSize:11, fontFamily:'var(--font-mono)', color: ok ? 'var(--success)' : 'var(--danger)', marginBottom:4}}>
+          ✓ {(s.result || '').slice(0, 160)}{(s.result || '').length > 160 ? '…' : ''}
+        </div>
+      );
+    }
+    if (s.kind === 'tool_error') return (
+      <div key={i} style={{padding:'4px 10px', fontSize:11, color:'var(--danger)'}}>
+        ✗ Error en {s.name}: {s.error}
+      </div>
+    );
+    if (s.kind === 'final') return (
+      <div key={i} style={{padding:'10px 12px', background:'color-mix(in oklch, var(--success) 10%, var(--bg-panel))', border:'1px solid color-mix(in oklch, var(--success) 30%, var(--border))', borderRadius:6, fontSize:13, marginTop:8, marginBottom:6, lineHeight:1.5}}>
+        <span style={{fontSize:10, fontWeight:700, color:'var(--success)', marginRight:8}}>IA</span>
+        {s.text || '(sin respuesta de texto)'}
+      </div>
+    );
+    if (s.kind === 'error') return (
+      <div key={i} style={{padding:'10px 12px', background:'color-mix(in oklch, var(--danger) 10%, var(--bg-panel))', border:'1px solid var(--danger)', borderRadius:6, fontSize:12, color:'var(--danger)', marginBottom:6}}>
+        ⚠ {s.error}
+      </div>
+    );
+    return null;
+  };
+
+  return (
+    <>
+      <div className="bo-drawer-overlay" onClick={onClose} style={{zIndex:60}}/>
+      <div style={{position:'fixed', top:'5%', left:'50%', transform:'translateX(-50%)', width:'min(820px, 95vw)', maxHeight:'90vh', background:'var(--bg-panel)', border:'1px solid var(--border)', borderRadius:'var(--r-md)', display:'flex', flexDirection:'column', zIndex:61, overflow:'hidden', boxShadow:'0 30px 80px rgba(0,0,0,0.3)'}}>
+        <div style={{padding:'14px 18px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:12, background:'linear-gradient(135deg, color-mix(in oklch, #8b5cf6 8%, var(--bg-panel)) 0%, color-mix(in oklch, #ec4899 8%, var(--bg-panel)) 100%)'}}>
+          <Icon name="sparkles" size={18}/>
+          <div>
+            <div style={{fontSize:14, fontWeight:700, letterSpacing:'-0.01em'}}>Asistente IA · agente</div>
+            <div style={{fontSize:11, color:'var(--text-muted)'}}>Pídeselo en lenguaje natural — la IA usa herramientas para construir el email por ti.</div>
+          </div>
+          <button className="icon-btn" onClick={onClose} style={{marginLeft:'auto'}}><Icon name="x" size={16}/></button>
+        </div>
+
+        <div ref={logRef} style={{padding:14, overflowY:'auto', flex:1, minHeight:200, maxHeight:'50vh'}}>
+          {steps.length === 0 && (
+            <div style={{padding:'10px 4px'}}>
+              <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600}}>Ejemplos</div>
+              <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                {examples.map((ex, i) => (
+                  <button key={i} className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', textAlign:'left', padding:'8px 10px', background:'var(--bg-sunken)'}} onClick={() => setPrompt(ex)}>
+                    <Icon name="zap" size={11} style={{marginRight:6, color:'var(--accent)'}}/>{ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {steps.map(renderStep)}
+        </div>
+
+        <div style={{padding:12, borderTop:'1px solid var(--border)', display:'flex', gap:8, alignItems:'flex-end'}}>
+          <textarea
+            ref={inputRef}
+            className="textarea"
+            rows={2}
+            placeholder="Pídele algo a la IA…"
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); }
+            }}
+            disabled={running}
+            style={{flex:1, fontSize:13, lineHeight:1.5, resize:'none', minHeight:50}}
+          />
+          <button className="btn btn-primary" onClick={run} disabled={running || !prompt.trim()} style={{whiteSpace:'nowrap'}}>
+            {running ? 'Trabajando…' : <><Icon name="send" size={12}/> Enviar</>}
+          </button>
+        </div>
+
+        {done && done.ok && (
+          <div style={{padding:'10px 14px', borderTop:'1px solid var(--border)', background:'var(--bg-sunken)', display:'flex', gap:8, alignItems:'center', justifyContent:'flex-end'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', flex:1}}>
+              {done.work && done.work.blocks.length} bloques en el resultado · idioma: {done.work && done.work.lang}
+            </span>
+            <button className="btn btn-ghost" onClick={() => { setSteps([]); setDone(null); setPrompt(''); inputRef.current && inputRef.current.focus(); }} style={{fontSize:12}}>
+              Otra petición
+            </button>
+            <button className="btn btn-primary" onClick={commit} style={{fontSize:12}}>
+              <Icon name="zap" size={12}/> Aplicar al canvas
+            </button>
+          </div>
+        )}
+        {done && !done.ok && (
+          <div style={{padding:'10px 14px', borderTop:'1px solid var(--border)', background:'var(--bg-sunken)', display:'flex', gap:8, justifyContent:'flex-end'}}>
+            <button className="btn btn-ghost" onClick={() => { setSteps([]); setDone(null); inputRef.current && inputRef.current.focus(); }} style={{fontSize:12}}>
+              Reintentar
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { Sidebar, Canvas, PreviewPanel, CommandPalette, EmailIframe, MiniProduct, BrandStripPreview, EmailPreviewModal, SaveAsTemplateModal, AiAgentModal });

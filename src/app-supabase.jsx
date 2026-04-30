@@ -122,19 +122,28 @@ function saveStorageData(data) {
   }
 }
 
-function getDraftBlocks() {
+function _draftKeyFor(userId) {
+  return userId ? DRAFT_KEY + '_' + userId : DRAFT_KEY
+}
+
+function getDraftBlocks(userId) {
   try {
-    const saved = localStorage.getItem(DRAFT_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      if (Array.isArray(parsed)) return parsed
+    // Try per-user key first; fall back to the legacy shared key for
+    // existing sessions that pre-date per-user drafts.
+    const keys = userId ? [_draftKeyFor(userId), DRAFT_KEY] : [DRAFT_KEY]
+    for (const k of keys) {
+      const saved = localStorage.getItem(k)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) return parsed
+      }
     }
   } catch {}
   return null
 }
 
-function saveDraftBlocks(blocks) {
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(blocks)) } catch {}
+function saveDraftBlocks(blocks, userId) {
+  try { localStorage.setItem(_draftKeyFor(userId), JSON.stringify(blocks)) } catch {}
 }
 
 /* Copy email HTML to clipboard as RICH content — that's what makes Gmail
@@ -172,10 +181,130 @@ function copyHtmlAsRich(html) {
   return Promise.resolve({ ok: false, mode: null, error: 'Clipboard API not available' })
 }
 
+/* ───────────── IMAGE UPLOAD — boprint.net WordPress Media REST ─────────────
+   The user opted to host uploaded images on their existing WordPress install
+   at boprint.net via the WP REST media endpoint. Authentication is a
+   WordPress Application Password (NOT the user's login password) — these are
+   revocable from the WP profile page if compromised.
+
+   ⚠️ The password lives in client-side JS, so anyone who opens devtools can
+   read it. The user explicitly accepted this risk. Mitigations:
+   • Use a dedicated WP user with the minimum role to upload media (Author).
+   • Revoke the application password if the app or repo gets exposed.
+   • Don't reuse this password for anything else.
+*/
+const BOPRINT_WP_URL = 'https://boprint.net'
+const BOPRINT_WP_USER = 'bo-uploader'
+const BOPRINT_WP_APP_PASSWORD = 'Ru16 DDlk kHNy ctoq EIoQ 6TAA' // app password "uploader"
+
+function uploadImageToBoprint(file, opts) {
+  opts = opts || {}
+  if (!file) return Promise.reject(new Error('Sin archivo seleccionado'))
+  if (!file.type || file.type.indexOf('image/') !== 0) {
+    return Promise.reject(new Error('El archivo no es una imagen (' + (file.type || 'tipo desconocido') + ')'))
+  }
+  const maxSize = opts.maxSize || (10 * 1024 * 1024)
+  if (file.size > maxSize) {
+    return Promise.reject(new Error('Imagen demasiado grande: ' + Math.round(file.size / 1024) + ' KB (máx. ' + Math.round(maxSize / 1024 / 1024) + ' MB)'))
+  }
+  // Build a safe filename: prefix-timestamp-originalname (sanitized)
+  const rawName = (file.name || 'image').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120)
+  const safeName = (opts.prefix ? opts.prefix.replace(/[^a-zA-Z0-9_-]/g, '-') + '-' : '') + Date.now() + '-' + rawName
+  // WP App Passwords accept the password with or without spaces; strip them
+  // for a slightly more compact Authorization header.
+  const auth = btoa(BOPRINT_WP_USER + ':' + BOPRINT_WP_APP_PASSWORD.replace(/\s+/g, ''))
+  const url = BOPRINT_WP_URL + '/wp-json/wp/v2/media'
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + auth,
+      'Content-Type': file.type,
+      'Content-Disposition': 'attachment; filename="' + safeName.replace(/"/g, '') + '"',
+    },
+    body: file,
+  }).then(async r => {
+    if (!r.ok) {
+      let detail = ''
+      try { const j = await r.json(); detail = j.message || j.code || JSON.stringify(j) } catch (e) { detail = await r.text() }
+      if (r.status === 401 || r.status === 403) {
+        throw new Error('Credenciales rechazadas por boprint.net (' + r.status + '). Comprueba el usuario / app password en WP.')
+      }
+      if (r.status === 413) {
+        throw new Error('Imagen demasiado grande para boprint.net (límite del servidor PHP). Reduce el tamaño o aumenta upload_max_filesize en el hosting.')
+      }
+      throw new Error('Subida fallida (' + r.status + '): ' + String(detail).slice(0, 200))
+    }
+    return r.json()
+  }).then(data => {
+    if (!data || !data.source_url) {
+      throw new Error('WP devolvió respuesta sin source_url (¿permisos del usuario insuficientes para crear media?)')
+    }
+    return data.source_url
+  }).catch(err => {
+    if (err && /failed to fetch|networkerror/i.test(err.message || '')) {
+      throw new Error('No se pudo conectar con boprint.net. Posible CORS — añade un plugin tipo "WP CORS" o whitelist tu dominio en el wp-config.php.')
+    }
+    throw err
+  })
+}
+
+/* Generic dispatcher — keeps the rest of the app decoupled from the chosen
+   provider. Today: WordPress on boprint.net. */
+function uploadImage(file, opts) {
+  return uploadImageToBoprint(file, opts)
+}
+
+/* Upload an image File to Supabase Storage and return a public URL.
+   Requires a public bucket (default name: 'bomedia-images') created from the
+   Supabase dashboard with public read access. Returns Promise<string>. */
+const SUPABASE_IMAGES_BUCKET = 'bomedia-images'
+
+function uploadImageToSupabase(file, opts) {
+  opts = opts || {}
+  if (!file) return Promise.reject(new Error('Sin archivo seleccionado'))
+  if (!file.type || file.type.indexOf('image/') !== 0) {
+    return Promise.reject(new Error('El archivo no es una imagen (' + (file.type || 'tipo desconocido') + ')'))
+  }
+  const maxSize = opts.maxSize || (5 * 1024 * 1024)
+  if (file.size > maxSize) {
+    return Promise.reject(new Error('Imagen demasiado grande: ' + Math.round(file.size / 1024) + ' KB (máx. ' + Math.round(maxSize / 1024 / 1024) + ' MB)'))
+  }
+  const bucket = opts.bucket || SUPABASE_IMAGES_BUCKET
+  const rawExt = (file.name && file.name.split('.').pop()) || 'png'
+  const ext = String(rawExt).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'png'
+  const path = (opts.prefix || 'uploads') + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + ext
+  const url = SUPABASE_URL + '/storage/v1/object/' + encodeURIComponent(bucket) + '/' + path
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': file.type,
+      'x-upsert': 'true',
+    },
+    body: file,
+  }).then(async r => {
+    if (!r.ok) {
+      let detail = ''
+      try { const j = await r.json(); detail = j.message || j.error || JSON.stringify(j) } catch (e) { detail = await r.text() }
+      if (r.status === 404 || /bucket.*not.*found|not.*exist/i.test(detail)) {
+        throw new Error('No existe el bucket "' + bucket + '" en Supabase Storage. Créalo desde el panel de Supabase (Storage → New bucket → marcar Public).')
+      }
+      if (r.status === 401 || r.status === 403) {
+        throw new Error('Sin permisos para subir al bucket "' + bucket + '". Comprueba que sea público y tenga políticas de upload abiertas (o requiera autenticación adecuada).')
+      }
+      throw new Error('Subida fallida (' + r.status + '): ' + String(detail).slice(0, 200))
+    }
+    return SUPABASE_URL + '/storage/v1/object/public/' + bucket + '/' + path
+  })
+}
+
 Object.assign(window, {
   SUPABASE_URL, SUPABASE_KEY, SUPABASE_TABLE, SUPABASE_ROW_ID, STORAGE_KEY, DRAFT_KEY,
+  SUPABASE_IMAGES_BUCKET,
+  BOPRINT_WP_URL, BOPRINT_WP_USER,
   supabaseFetch, loadFromSupabase, saveToSupabase,
   supabaseBackupFetch, saveBackupToSupabase, pruneSupabaseBackups, listSupabaseBackups, loadSupabaseBackup,
   getStorageData, saveStorageData, getDraftBlocks, saveDraftBlocks,
-  copyHtmlAsRich,
+  copyHtmlAsRich, uploadImage, uploadImageToBoprint, uploadImageToSupabase,
 })

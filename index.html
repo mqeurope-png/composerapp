@@ -3,7 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bomedia Email Composer · v3</title>
+<!-- Content Security Policy: limits which origins can load scripts, styles,
+     fonts, images and which APIs the page may contact. Reduces XSS surface
+     for the public deploy. 'unsafe-inline' on style is required by the
+     in-line style="…" attributes scattered through the JSX renderers; the
+     'unsafe-eval' on script is required by Babel-standalone. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com data:;
+  img-src 'self' data: blob: https:;
+  connect-src 'self' https://midvgxxndddasxlnstkg.supabase.co https://api.openai.com https://api.anthropic.com https://boprint.net;
+  frame-src 'self' blob:;
+  base-uri 'self';
+  form-action 'self';
+  object-src 'none';
+">
+<title>Bomedia Email Composer · v4 (AI agent)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -27,6 +44,7 @@
     /* Brand accents — quieter, unified chroma */
     --artisjet: oklch(55% 0.18 255);
     --mbo:      oklch(55% 0.18 295);
+    --mbo_dtf:  oklch(60% 0.22 0);
     --pimpam:   oklch(63% 0.17 45);
     --flux:     oklch(62% 0.13 210);
     --bomedia:  oklch(45% 0.02 80);
@@ -545,6 +563,7 @@
   }
   .lib-icon.artisjet { background: color-mix(in oklch, var(--artisjet) 15%, transparent); color: var(--artisjet); }
   .lib-icon.mbo { background: color-mix(in oklch, var(--mbo) 15%, transparent); color: var(--mbo); }
+  .lib-icon.mbo_dtf { background: color-mix(in oklch, var(--mbo_dtf) 15%, transparent); color: var(--mbo_dtf); }
   .lib-icon.pimpam { background: color-mix(in oklch, var(--pimpam) 15%, transparent); color: var(--pimpam); }
   .lib-icon.flux { background: color-mix(in oklch, var(--flux) 15%, transparent); color: var(--flux); }
   .lib-icon.smartjet { background: color-mix(in oklch, oklch(60% 0.12 180) 15%, transparent); color: oklch(45% 0.12 180); }
@@ -758,6 +777,15 @@
   [data-theme="dark"] .edit-btn[style*="var(--accent)"] { color: var(--bg) !important; }
   .block:hover { border-color: var(--border-strong); box-shadow: var(--sh-sm); }
   .block.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  /* Drag-drop reorder visual feedback. The bar shows where the dragged
+     block will land — top edge = insert before; bottom edge = insert after. */
+  .block.drop-top { box-shadow: 0 -3px 0 0 var(--accent), var(--sh-sm); }
+  .block.drop-bottom { box-shadow: 0 3px 0 0 var(--accent), var(--sh-sm); }
+  /* Sections need overflow:visible so the "+ Añadir a columna" popover and
+     any other absolutely-positioned children can render outside the block's
+     border without being clipped. */
+  .block.section-block { overflow: visible; }
+  .section-cols, .section-col { overflow: visible; }
   .block-bar {
     display: flex;
     align-items: center;
@@ -1490,6 +1518,7 @@
   }
   .product-card-brand.artisjet { color: var(--artisjet); }
   .product-card-brand.mbo { color: var(--mbo); }
+  .product-card-brand.mbo_dtf { color: var(--mbo_dtf); }
   .product-card-brand.pimpam { color: var(--pimpam); }
   .product-card-brand.flux { color: var(--flux); }
   .product-card-name {
@@ -2178,13 +2207,14 @@
 
 <!-- Business logic modules (ported from v2) — loaded BEFORE the UI so globals exist. -->
 <script>window.__bv = '20260429a'</script>
-<script type="text/babel" data-presets="react" src="src/app-data.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-i18n.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-security.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-supabase.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-openai.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-email-gen.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-rich-editor.jsx?v=20260429y"></script>
+<script type="text/babel" data-presets="react" src="src/app-data.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-i18n.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-security.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-supabase.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-openai.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-email-gen.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-rich-editor.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-ai-agent.jsx?v=20260429v4h"></script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -2243,10 +2273,10 @@ Object.assign(window, { Icon });
 </script>
 
 <!-- UI Components -->
-<script type="text/babel" data-presets="react" src="src/app-compositor.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-inspector.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-backoffice.jsx?v=20260429y"></script>
-<script type="text/babel" data-presets="react" src="src/app-main.jsx?v=20260429y"></script>
+<script type="text/babel" data-presets="react" src="src/app-compositor.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-inspector.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-backoffice.jsx?v=20260429v4h"></script>
+<script type="text/babel" data-presets="react" src="src/app-main.jsx?v=20260429v4h"></script>
 
 </body>
 </html>

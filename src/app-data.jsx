@@ -32,7 +32,8 @@ function getDefaultState() {
   return {
     brands: [
       {id:'artisjet', label:'artisJet', logo:'https://artisjet-printers.eu/wp-content/uploads/2017/12/logoartisjet.jpg', url:{es:'https://boprint.net',fr:'https://artisjet-printers.eu',de:'https://artisjet-printers.eu/de',en:'https://www.mqeurope.com',nl:'https://www.mqeurope.com/nl'}, urlLabel:{es:'boprint.net →',fr:'artisjet-printers.eu →',de:'artisjet-printers.eu →',en:'mqeurope.com →',nl:'mqeurope.com →'}, color:'#2563eb', divider:'#e2e8f0', logoHeight:'18', visible:true, logoText:'artisJet'},
-      {id:'mbo', label:'MBO Printers', logo:'https://mboprinters.com/wp-content/uploads/2022/10/logomboprinterslongb.png', url:{es:'https://mboprinters.com',fr:'https://mboprinters.com/fr',de:'https://mboprinters.com/de',en:'https://mboprinters.com/en',nl:'https://mboprinters.com/en'}, urlLabel:{es:'mboprinters.com →',fr:'mboprinters.com →',de:'mboprinters.com →',en:'mboprinters.com →',nl:'mboprinters.com →'}, color:'#7c3aed', divider:'#e2e8f0', logoHeight:'18', visible:true, logoText:'MBO'},
+      {id:'mbo', label:'MBO UV-LED', logo:'https://mboprinters.com/wp-content/uploads/2022/10/logomboprinterslongb.png', url:{es:'https://mboprinters.com',fr:'https://mboprinters.com/fr',de:'https://mboprinters.com/de',en:'https://mboprinters.com/en',nl:'https://mboprinters.com/en'}, urlLabel:{es:'mboprinters.com →',fr:'mboprinters.com →',de:'mboprinters.com →',en:'mboprinters.com →',nl:'mboprinters.com →'}, color:'#7c3aed', divider:'#e2e8f0', logoHeight:'18', visible:true, logoText:'MBO UV-LED'},
+      {id:'mbo_dtf', label:'MBO DTF', logo:'https://mboprinters.com/wp-content/uploads/2022/10/logomboprinterslongb.png', url:{es:'https://mboprinters.com/dtf',fr:'https://mboprinters.com/fr/dtf',de:'https://mboprinters.com/de/dtf',en:'https://mboprinters.com/en/dtf',nl:'https://mboprinters.com/en/dtf'}, urlLabel:{es:'mboprinters.com →',fr:'mboprinters.com →',de:'mboprinters.com →',en:'mboprinters.com →',nl:'mboprinters.com →'}, color:'#db2777', divider:'#fce7f3', logoHeight:'18', visible:true, logoText:'MBO DTF'},
       {id:'pimpam', label:'PimPam Vending', logo:'https://pimpam-vending.com/wp-content/uploads/2025/11/WhatsApp_Image_2025-11-14_at_10.12.57-removebg-preview-e1763541822221.png', url:{es:'https://pimpam-vending.com',fr:'https://pimpam-vending.com',de:'https://pimpam-vending.com',en:'https://pimpam-vending.com',nl:'https://pimpam-vending.com'}, urlLabel:{es:'pimpam-vending.com →',fr:'pimpam-vending.com →',de:'pimpam-vending.com →',en:'pimpam-vending.com →',nl:'pimpam-vending.com →'}, color:'#ea580c', divider:'#fed7aa', logoHeight:'22', visible:true, logoText:'PimPam'},
       {id:'smartjet', label:'SmartJet', logo:'https://boprint.net/wp-content/uploads/2025/12/smartjet_prodotti-1.png', url:{es:'https://boprint.net/categoria-producto/smartjet-flex/',fr:'https://boprint.net/categoria-producto/smartjet-flex/',de:'https://boprint.net/categoria-producto/smartjet-flex/',en:'https://boprint.net/categoria-producto/smartjet-flex/',nl:'https://boprint.net/categoria-producto/smartjet-flex/'}, urlLabel:{es:'boprint.net →',fr:'boprint.net →',de:'boprint.net →',en:'boprint.net →',nl:'boprint.net →'}, color:'#0d9488', divider:'#ccfbf1', logoHeight:'22', logoMaxWidth:'180', visible:true, logoText:'SmartJet'},
       {id:'flux', label:'FLUX', logo:'', url:{es:'',fr:'',de:'',en:'',nl:''}, urlLabel:{es:'flux →',fr:'flux →',de:'flux →',en:'flux →',nl:'flux →'}, color:'#64748b', divider:'#e2e8f0', logoHeight:'18', visible:true, logoText:'FLUX'},
@@ -86,6 +87,11 @@ function getDefaultState() {
     users: [
       { id: 'admin', name: 'Admin', role: 'admin', passwordHash: 'a1bfe0bf4fa8f02f1969c64276b15f55e455b3dd9f50f11a22fb8c284a9c2f48', hiddenItems: {}, aiStyles: {} },
     ],
+    /* Saved CTA library — reusable call-to-action cards that can be picked
+       from the column inserter. Each entry is a self-contained CTA card
+       (optional title / bullets / button). Empty by default; user creates
+       their own via Backoffice → CTAs. */
+    ctaBlocks: [],
     openaiKey: '',
   }
 }
@@ -106,6 +112,25 @@ function createBlock(type) {
     case "freebird": return { id, type }
     case "pimpam_hero": return { id, type }
     case "pimpam_steps": return { id, type }
+    /* Multi-column layout container. `columns` is an array of column objects;
+       each column has its own `blocks` array. Width is split equally for now
+       (50/50, 33/33/33…). Used to lay out things like "text + image" side
+       by side or 3 product cards in a single row. */
+    case "section_2col": return { id, type:"section", layout:"2col", columns:[{ blocks:[] }, { blocks:[] }] }
+    case "section_3col": return { id, type:"section", layout:"3col", columns:[{ blocks:[] }, { blocks:[] }, { blocks:[] }] }
+    /* Single image block. Render as <img> with optional link wrapper. */
+    case "image": return { id, type:"image", src:"", alt:"", link:"", align:"center", widthPct:100 }
+    /* Call-to-action card. Optional title / subtitle / bullets above the
+       button so the CTA can stand on its own as a "feature highlight"
+       block, not just a naked link. The defaults are conservative so the
+       user sees a useful starting point. */
+    case "cta": return {
+      id, type:"cta",
+      title:"", subtitle:"", bullets:[],
+      text:"Más información", url:"",
+      bg:"#1d4ed8", color:"#ffffff", align:"center",
+      panelBg:"transparent", panelBorder:"transparent",
+    }
     default: return { id, type }
   }
 }
@@ -123,7 +148,52 @@ const STANDALONE_BLOCKS = _DEFAULT_STATE.standaloneBlocks.map(sb => Object.assig
   type: sb.blockType,
 }))
 
+/* Re-tag any legacy `mbo`-branded item whose visible text mentions DTF over
+   to the new `mbo_dtf` brand. Mutation-free; returns the patched state. The
+   match is conservative: only the item's own name/title/desc/text fields are
+   inspected (not arbitrary nested fields), and the rule is "contains DTF as
+   a whole token" — so "DTFkit" matches but "WiDTH" doesn't. Idempotent. */
+function migrateMboDtf(state) {
+  if (!state || typeof state !== 'object') return state
+  const re = /\bDTF\b/i
+  const isDtf = (s) => typeof s === 'string' && re.test(s)
+  const retag = (item, fields) => {
+    if (!item || item.brand !== 'mbo') return item
+    const hit = fields.some(f => isDtf(item[f]))
+    if (!hit) return item
+    return Object.assign({}, item, { brand: 'mbo_dtf' })
+  }
+  const patched = Object.assign({}, state)
+  if (Array.isArray(state.products))
+    patched.products = state.products.map(p => retag(p, ['name','desc']))
+  if (Array.isArray(state.prewrittenTexts))
+    patched.prewrittenTexts = state.prewrittenTexts.map(t => retag(t, ['name','text']))
+  if (Array.isArray(state.composedBlocks))
+    patched.composedBlocks = state.composedBlocks.map(c => {
+      let next = retag(c, ['title','desc','introText'])
+      // brandStrip is the brand id used for the rendered logo strip — flip
+      // it too so the email actually shows the DTF link rather than UV-LED.
+      if (next.brandStrip === 'mbo' && [next.title, next.desc, next.introText].some(isDtf)) {
+        next = Object.assign({}, next, { brandStrip: 'mbo_dtf' })
+      }
+      return next
+    })
+  if (Array.isArray(state.templates))
+    patched.templates = state.templates.map(t => retag(t, ['name','desc']))
+  if (Array.isArray(state.standaloneBlocks))
+    patched.standaloneBlocks = state.standaloneBlocks.map(b => {
+      let next = retag(b, ['title','desc'])
+      // For brand_strip standalones, also flip the embedded config.brand
+      if (next.config && next.config.brand === 'mbo' && (isDtf(next.title) || isDtf(next.desc))) {
+        next = Object.assign({}, next, { config: Object.assign({}, next.config, { brand: 'mbo_dtf' }) })
+      }
+      return next
+    })
+  return patched
+}
+
 Object.assign(window, {
   DEFAULT_PRODUCTS, getDefaultState, createBlock, LANGS, LANG_LABELS,
   PRODUCTS, BRANDS, PREWRITTEN_TEXTS, TEMPLATES, STANDALONE_BLOCKS, COMPOSED_BLOCKS,
+  migrateMboDtf,
 })

@@ -11,6 +11,10 @@ function App() {
   const [tweaksOpen, setTweaksOpen] = React.useState(false);
   const [mode, setMode] = React.useState('compositor');
   const [lang, setLang] = React.useState('es');
+  const lastLangUserRef = React.useRef(null);
+  // Note: the useEffects that restore/persist user.lastLang are declared
+  // further down — they need currentUserId + appState which are defined
+  // later in the component body.
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [previewHidden, setPreviewHidden] = React.useState(false);
   const [rightMode, setRightMode] = React.useState('preview');
@@ -71,6 +75,15 @@ function App() {
     if (stored) {
       const defaults = getDefaultState();
       if (!stored.brands) stored.brands = defaults.brands;
+      else {
+        const existingIds = new Set(stored.brands.map(b => b.id));
+        defaults.brands.forEach(db => {
+          if (!existingIds.has(db.id)) stored.brands.push(db);
+        });
+      }
+      // One-shot migration: split DTF items off into the mbo_dtf brand
+      // (idempotent — checks for the keyword each time).
+      if (typeof migrateMboDtf === 'function') Object.assign(stored, migrateMboDtf(stored));
       if (!stored.standaloneBlocks) stored.standaloneBlocks = defaults.standaloneBlocks;
       if (!stored.templates) stored.templates = defaults.templates;
       // Backwards-compat: if there's no users[] yet, create a single admin
@@ -113,18 +126,73 @@ function App() {
     }
   }, [currentUserId, currentUser, appState.users]);
 
-  // ─── Draft blocks (v3 shape) — persisted to localStorage ───
-  // Start empty so the user sees the template-suggestions empty state on
-  // first load. Hardcoded textIds in earlier defaults pointed to data that
-  // no longer exists in Supabase, leaving stale "Texto vacío" blocks.
+  // When the active user changes, restore their saved language. When the
+  // language changes while a user is logged in, persist it on their record
+  // so it survives logout/reload.
+  React.useEffect(() => {
+    if (lastLangUserRef.current === currentUserId) return;
+    lastLangUserRef.current = currentUserId;
+    if (currentUser && currentUser.lastLang && ['es','fr','de','en','nl'].includes(currentUser.lastLang)) {
+      setLang(currentUser.lastLang);
+    }
+  }, [currentUserId, currentUser]);
+  React.useEffect(() => {
+    if (!currentUserId) return;
+    setAppState(prev => {
+      const users = prev.users || [];
+      const i = users.findIndex(x => x.id === currentUserId);
+      if (i < 0) return prev;
+      if (users[i].lastLang === lang) return prev;
+      const next = users.slice();
+      next[i] = { ...next[i], lastLang: lang };
+      return { ...prev, users: next };
+    });
+  }, [lang, currentUserId]);
+
+  // ─── Draft blocks (v3 shape) — persisted per user in localStorage ───
+  // Each user has their own draft slot keyed by user id, so Sara's canvas
+  // doesn't overwrite Bart's.
   const [blocks, setBlocks] = React.useState(() => {
-    const draft = getDraftBlocks();
+    const initialUserId = (() => {
+      try { return sessionStorage.getItem('bomedia_session_user') || null; } catch (e) { return null; }
+    })();
+    const draft = getDraftBlocks(initialUserId);
     if (draft && draft.length > 0) return draft;
     return [];
   });
 
-  // Auto-save draft blocks
-  React.useEffect(() => { saveDraftBlocks(blocks); }, [blocks]);
+  // When the user changes (login / logout / switch), load their personal
+  // draft so they see what they left when they last used the app. We set
+  // `inLoadRef` so the save effect below skips the very next run — without
+  // that, the save effect would fire with the OUTGOING user's blocks but
+  // the INCOMING user's id and overwrite the new user's draft slot.
+  const lastUserRef = React.useRef(currentUserId);
+  const inLoadRef = React.useRef(false);
+  React.useEffect(() => {
+    if (lastUserRef.current === currentUserId) return;
+    lastUserRef.current = currentUserId;
+    inLoadRef.current = true;
+    const userDraft = getDraftBlocks(currentUserId);
+    setBlocks(userDraft && userDraft.length > 0 ? userDraft : []);
+  }, [currentUserId]);
+
+  // Save the draft to the CURRENT user's slot whenever blocks change.
+  // Skips the first fire after a user switch (see inLoadRef above).
+  React.useEffect(() => {
+    if (inLoadRef.current) { inLoadRef.current = false; return; }
+    saveDraftBlocks(blocks, currentUserId);
+  }, [blocks, currentUserId]);
+
+  // Expose setAppState globally so deeply-nested popovers (e.g. the image
+  // library picker inside section columns) can record uploads without
+  // threading the setter through every layer of props. Also expose the
+  // current appState so library widgets can browse uploads/products/brands
+  // without prop-drilling.
+  React.useEffect(() => { window.__setAppState = setAppState; }, [setAppState]);
+  React.useEffect(() => { window.__appState = appState; }, [appState]);
+  // Expose expandTemplate so the AI agent's load_template tool can use the
+  // app's canonical template-expansion logic instead of reimplementing it.
+  React.useEffect(() => { window.expandTemplate = expandTemplate; });
 
   // Keep the v3-compat globals in sync with the live appState.
   // Components (Sidebar, BlockCard, Inspector, etc.) read from window.PRODUCTS /
@@ -182,6 +250,19 @@ function App() {
       if (cloudData && cloudData.products) {
         const defaults = getDefaultState();
         if (!cloudData.brands) cloudData.brands = defaults.brands;
+        // Forward-compat: if defaults add new brand ids that the cloud data
+        // doesn't have yet (e.g. mbo_dtf split from mbo), inject them so the
+        // user can use them without re-resetting their data.
+        else {
+          const existingIds = new Set(cloudData.brands.map(b => b.id));
+          defaults.brands.forEach(db => {
+            if (!existingIds.has(db.id)) cloudData.brands.push(db);
+          });
+        }
+        // One-shot migration: re-tag any item whose name/title/desc mentions
+        // "DTF" from the legacy `mbo` brand to the new `mbo_dtf`. Idempotent
+        // — re-running it on already-migrated data is a no-op.
+        cloudData = migrateMboDtf(cloudData);
         if (!cloudData.standaloneBlocks) cloudData.standaloneBlocks = defaults.standaloneBlocks;
         if (!cloudData.templates) cloudData.templates = defaults.templates;
         // Multi-user migration: pre-existing Supabase rows have no users[].
@@ -436,29 +517,84 @@ function App() {
 
   // Helper that splices `arr` so the new items land right after `insertAfter`
   // (or appends if it's null/out of range). Resets the insertion target.
+  // Defensive: only treat insertAfter as valid if it's a non-NaN integer in
+  // range. Anything else (null, undefined, SyntheticEvent leak, NaN) → append.
   const placeBlocks = (prev, items) => {
-    if (insertAfter == null || insertAfter < 0 || insertAfter >= prev.length) {
-      return [...prev, ...items];
-    }
+    const ia = insertAfter;
+    const valid = typeof ia === 'number' && Number.isFinite(ia) && ia >= 0 && ia < prev.length;
+    if (!valid) return [...prev, ...items];
     const out = prev.slice();
-    out.splice(insertAfter + 1, 0, ...items);
+    out.splice(ia + 1, 0, ...items);
     return out;
   };
 
-  const addBlock = (spec) => {
+  // Target for the next inner-block insertion (when the user clicks "+ Añadir"
+  // inside a section column). Cleared after one add. null means the block
+  // goes at top level of the canvas (default).
+  const [innerTarget, setInnerTarget] = React.useState(null);
+
+  const addBlock = (spec, opts) => {
+    // `into` lets the caller route the new block into a section column instead
+    // of placing it at the top of the canvas. Falls back to innerTarget state
+    // (set by the column "+ Añadir" button).
+    const into = (opts && opts.into) || innerTarget;
     if (spec.templateId) {
       const exp = expandTemplate(spec.templateId);
       setBlocks(prev => placeBlocks(prev, exp.map(e => ({ ...e, id: mkId() }))));
       setInsertAfter(null);
+      setInnerTarget(null);
+      return;
+    }
+    // Multi-column section containers — built via createBlock so they get a
+    // properly initialized `columns` array.
+    if (spec.type === 'section_2col' || spec.type === 'section_3col') {
+      const sec = createBlock(spec.type);
+      sec.id = mkId();
+      setBlocks(prev => placeBlocks(prev, [sec]));
+      setInsertAfter(null);
+      setInnerTarget(null);
+      return;
+    }
+    // Image / CTA blocks: built via createBlock so the defaults populate.
+    // For images coming from the library picker, the preselected URL travels
+    // in spec._imgUrl and gets set as src here. For CTAs picked from the
+    // saved library, spec._ctaSourceId carries the source id; we copy the
+    // saved fields into the new block (no live link — independent copy).
+    if (spec.type === 'image' || spec.type === 'cta') {
+      const ib = createBlock(spec.type);
+      ib.id = mkId();
+      if (spec.type === 'image' && spec._imgUrl) ib.src = spec._imgUrl;
+      if (spec.type === 'cta' && spec._ctaSourceId) {
+        const src = (appState.ctaBlocks || []).find(c => c.id === spec._ctaSourceId);
+        if (src) {
+          ['title','subtitle','bullets','text','url','bg','color','align','panelBg','panelBorder'].forEach(k => {
+            if (src[k] !== undefined) ib[k] = Array.isArray(src[k]) ? src[k].slice() : src[k];
+          });
+          ib._ctaSourceId = src.id;
+        }
+      }
+      if (into) {
+        setBlocks(prev => _addToSection(prev, into.sectionId, into.columnIdx, ib));
+      } else {
+        setBlocks(prev => placeBlocks(prev, [ib]));
+      }
+      setInsertAfter(null);
+      setInnerTarget(null);
       return;
     }
     // "text-blank" → empty text block, ready to write into. Selected on add
     // so the inline editor opens immediately.
     if (spec.type === 'text-blank') {
       const newId = mkId();
-      setBlocks(prev => placeBlocks(prev, [{ id: newId, type: 'text', overridesByLang: { es: '' } }]));
+      const newBlock = { id: newId, type: 'text', overridesByLang: { es: '' } };
+      if (into) {
+        setBlocks(prev => _addToSection(prev, into.sectionId, into.columnIdx, newBlock));
+      } else {
+        setBlocks(prev => placeBlocks(prev, [newBlock]));
+      }
       setTimeout(() => { setSelectedId(newId); setRightMode('edit'); }, 0);
       setInsertAfter(null);
+      setInnerTarget(null);
       return;
     }
     const b = { id: mkId(), type: spec.type };
@@ -494,12 +630,34 @@ function App() {
           const products = appState.products || [];
           const p = products.find(x => x.id === cfg.defaultProduct);
           if (p) {
+            // Base (Spanish) fields — the email-gen reads these as the default
             b.heroImage = p.img;
             b.heroTitle = p.name;
             b.heroSubtitle = p.desc;
             b.heroBullets = [p.feat1, p.feat2].filter(Boolean);
-            b.heroCtaButtons = (p.link ? [{ text:'Más información', url:p.link, bg:p.accent || '#1d4ed8', color:'#ffffff' }] : []);
+            const ctaLabels = { es:'Más información', fr:"Plus d'infos", de:'Mehr Infos', en:'More info', nl:'Meer info' };
+            b.heroCtaButtons = (p.link ? [{ text: ctaLabels.es, url: p.link, bg: p.accent || '#1d4ed8', color: '#ffffff' }] : []);
             b.heroBgColor = '#ffffff';
+            // Build per-lang i18n from the product's own translations so
+            // switching language in the canvas reflects in the hero too.
+            const heroI18n = {};
+            for (const l of ['fr','de','en','nl']) {
+              const tr = (p.i18n && p.i18n[l]) || null;
+              if (!tr) continue;
+              const entry = {};
+              if (tr.desc)  entry.heroSubtitle = tr.desc;
+              if (tr.feat1 || tr.feat2) entry.heroBullets = [tr.feat1, tr.feat2].filter(Boolean);
+              if (p.link || tr.link) {
+                entry.heroCtaButtons = [{
+                  text: ctaLabels[l] || ctaLabels.es,
+                  url: tr.link || p.link,
+                  bg: p.accent || '#1d4ed8',
+                  color: '#ffffff',
+                }];
+              }
+              if (Object.keys(entry).length) heroI18n[l] = entry;
+            }
+            if (Object.keys(heroI18n).length) b.i18n = heroI18n;
           }
           // Normalise to the unified type so all editors/renderers treat
           // it as a regular hero from now on.
@@ -513,17 +671,72 @@ function App() {
       if (b.type === 'product_trio' && !b.product1) { b.product1 = 'uv1612g'; b.product2 = 'uv1812'; b.product3 = 'uv2513'; }
       if (b.type === 'brand_strip' && !b.brand) b.brand = 'artisjet';
     }
-    setBlocks(prev => placeBlocks(prev, [b]));
+    if (into) {
+      setBlocks(prev => _addToSection(prev, into.sectionId, into.columnIdx, b));
+    } else {
+      setBlocks(prev => placeBlocks(prev, [b]));
+    }
     setInsertAfter(null);
+    setInnerTarget(null);
   };
 
-  const updateBlock = (id, b) => setBlocks(prev => prev.map(x => x.id === id ? b : x));
-  const deleteBlock = (id) => setBlocks(prev => prev.filter(x => x.id !== id));
+  // Section-aware mutation helpers. They operate at top level first, and if
+  // the target id isn't there, recurse into section columns. Used by
+  // updateBlock / deleteBlock / duplicateBlock so the same APIs work for
+  // both standalone blocks and inner ones.
+  const _mapBlocks = (blocks, fn) => blocks.map(x => {
+    const r = fn(x);
+    if (r !== x) return r;
+    if (x.type === 'section' && Array.isArray(x.columns)) {
+      const cols = x.columns.map(col => ({
+        ...col,
+        blocks: _mapBlocks(col.blocks || [], fn),
+      }));
+      return { ...x, columns: cols };
+    }
+    return x;
+  });
+  const _filterBlocks = (blocks, pred) => blocks.filter(pred).map(x => {
+    if (x.type === 'section' && Array.isArray(x.columns)) {
+      const cols = x.columns.map(col => ({
+        ...col,
+        blocks: _filterBlocks(col.blocks || [], pred),
+      }));
+      return { ...x, columns: cols };
+    }
+    return x;
+  });
+  const _addToSection = (blocks, sectionId, columnIdx, newBlock) => blocks.map(x => {
+    if (x.id !== sectionId) return x;
+    if (x.type !== 'section' || !Array.isArray(x.columns)) return x;
+    const cols = x.columns.slice();
+    const col = cols[columnIdx] || { blocks: [] };
+    cols[columnIdx] = { ...col, blocks: [...(col.blocks || []), newBlock] };
+    return { ...x, columns: cols };
+  });
+
+  const updateBlock = (id, b) => setBlocks(prev => _mapBlocks(prev, x => x.id === id ? b : x));
+  const deleteBlock = (id) => setBlocks(prev => _filterBlocks(prev, x => x.id !== id));
   const duplicateBlock = (id) => setBlocks(prev => {
-    const i = prev.findIndex(x => x.id === id);
-    if (i < 0) return prev;
-    const copy = { ...prev[i], id: mkId() };
-    return [...prev.slice(0, i+1), copy, ...prev.slice(i+1)];
+    // Top-level duplicate first
+    const ti = prev.findIndex(x => x.id === id);
+    if (ti >= 0) {
+      const copy = { ...prev[ti], id: mkId() };
+      return [...prev.slice(0, ti+1), copy, ...prev.slice(ti+1)];
+    }
+    // Recurse into sections
+    return prev.map(x => {
+      if (x.type !== 'section' || !Array.isArray(x.columns)) return x;
+      return {
+        ...x,
+        columns: x.columns.map(col => {
+          const ii = (col.blocks || []).findIndex(ib => ib.id === id);
+          if (ii < 0) return col;
+          const copy = { ...col.blocks[ii], id: mkId() };
+          return { ...col, blocks: [...col.blocks.slice(0, ii+1), copy, ...col.blocks.slice(ii+1)] };
+        }),
+      };
+    });
   });
   const moveBlock = (id, dir) => setBlocks(prev => {
     const i = prev.findIndex(x => x.id === id);
@@ -534,6 +747,101 @@ function App() {
     [arr[i], arr[j]] = [arr[j], arr[i]];
     return arr;
   });
+
+  // ─── Undo / Redo for the canvas blocks array ───
+  // Two stacks of previous block states. Every time `blocks` changes (except
+  // during user-switch loads or the undo/redo itself), the OLD state gets
+  // pushed to the past stack so Ctrl+Z can restore it. Cap at 50 entries to
+  // bound memory.
+  const undoPastRef = React.useRef([]);
+  const undoFutureRef = React.useRef([]);
+  const undoPrevRef = React.useRef(blocks);
+  const undoSkipRef = React.useRef(true); // skip the very first effect run (initial mount)
+
+  React.useEffect(() => {
+    if (undoSkipRef.current) {
+      undoSkipRef.current = false;
+      undoPrevRef.current = blocks;
+      return;
+    }
+    if (undoPrevRef.current === blocks) return;
+    undoPastRef.current.push(undoPrevRef.current);
+    if (undoPastRef.current.length > 50) undoPastRef.current.shift();
+    undoFutureRef.current = []; // any new edit clears the redo stack
+    undoPrevRef.current = blocks;
+  }, [blocks]);
+
+  // Reset history when the active user changes — Sara shouldn't be able to
+  // undo back into Bart's draft. The user-switch effect (above) already sets
+  // inLoadRef so its setBlocks call doesn't fire saveDraft; we mirror that
+  // for the undo history.
+  React.useEffect(() => {
+    undoPastRef.current = [];
+    undoFutureRef.current = [];
+    undoSkipRef.current = true;
+  }, [currentUserId]);
+
+  const undo = () => {
+    setBlocks(curr => {
+      if (undoPastRef.current.length === 0) return curr;
+      const prev = undoPastRef.current.pop();
+      undoFutureRef.current.push(curr);
+      undoSkipRef.current = true;
+      return prev;
+    });
+  };
+  const redo = () => {
+    setBlocks(curr => {
+      if (undoFutureRef.current.length === 0) return curr;
+      const next = undoFutureRef.current.pop();
+      undoPastRef.current.push(curr);
+      undoSkipRef.current = true;
+      return next;
+    });
+  };
+
+  // Keyboard shortcuts: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo.
+  // Skip when the user is typing in an input/textarea/contenteditable so the
+  // browser's native text undo still works inside text fields.
+  React.useEffect(() => {
+    const isEditableTarget = (el) => {
+      if (!el) return false;
+      const tag = (el.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (el.isContentEditable) return true;
+      return false;
+    };
+    const onKey = (e) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      if (!cmd) return;
+      const key = e.key.toLowerCase();
+      if (isEditableTarget(e.target)) return;
+      if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (key === 'z' && e.shiftKey) { e.preventDefault(); redo(); }
+      else if (key === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // HTML5 drag-drop reorder: splice the source block out and insert it
+  // immediately before (position='before') or after (position='after') the
+  // target. No-op when source === target.
+  const reorderBlocks = (sourceId, targetId, position) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    setBlocks(prev => {
+      const si = prev.findIndex(b => b.id === sourceId);
+      const ti = prev.findIndex(b => b.id === targetId);
+      if (si < 0 || ti < 0) return prev;
+      const arr = prev.slice();
+      const [moved] = arr.splice(si, 1);
+      // After removal the target index may have shifted by 1
+      const adjustedTi = ti > si ? ti - 1 : ti;
+      const insertAt = position === 'after' ? adjustedTi + 1 : adjustedTi;
+      arr.splice(insertAt, 0, moved);
+      return arr;
+    });
+  };
 
   const goBackoffice = () => setMode('backoffice');
   const submitLogin = () => {
@@ -678,11 +986,27 @@ function App() {
             onUpdate={updateBlock}
             onDelete={deleteBlock}
             onMove={moveBlock}
+            onReorder={reorderBlocks}
             onDuplicate={duplicateBlock}
             selectedId={selectedId}
             setSelectedId={(id) => { setSelectedId(id); if (id) setRightMode('edit'); }}
-            onOpenPalette={(idx) => { if (idx != null) setInsertAfter(idx); setCmdkOpen(true); }}
-            onAddBlock={(spec, idx) => { if (idx != null) setInsertAfter(idx); addBlock(spec); }}
+            onOpenPalette={(idx) => {
+              // Only accept numeric indices. Without this, calling
+              // `onClick={onOpenPalette}` (no parens) would pass the React
+              // SyntheticEvent here, which then becomes a NaN insertAfter
+              // and makes splice(NaN+1, 0, ...) insert at index 0 — i.e.
+              // the bottom "Añadir bloque" button silently inserts at the
+              // top of the email instead of the bottom. Bug fix Apr 2026.
+              if (typeof idx === 'number' && idx >= 0) setInsertAfter(idx);
+              else setInsertAfter(null);
+              setCmdkOpen(true);
+            }}
+            onOpenInnerPalette={(sectionId, columnIdx) => { setInnerTarget({ sectionId, columnIdx }); setCmdkOpen(true); }}
+            onAddBlock={(spec, idx) => {
+              if (typeof idx === 'number' && idx >= 0) setInsertAfter(idx);
+              addBlock(spec);
+            }}
+            onAddBlockToColumn={(sectionId, columnIdx, spec) => { addBlock(spec, { into: { sectionId, columnIdx } }); }}
             onClearBlocks={() => { setBlocks([]); setSelectedId(null); setEditingTemplateId(null); }}
             onExpandPreview={() => setPreviewModalOpen(true)}
             editingTemplate={editingTemplateId ? (appState.templates || []).find(t => t.id === editingTemplateId) : null}
@@ -692,6 +1016,11 @@ function App() {
             lang={lang}
             variant={tweaks.titleStyle}
             emailHtml={emailHtml}
+            onUndo={undo}
+            onRedo={redo}
+            appState={appState}
+            onSetBlocks={setBlocks}
+            onSetLang={setLang}
           />
           {!previewHidden && (
             <div className="right-panel" style={{display:'flex', flexDirection:'column', minHeight:0, background:'var(--bg-sunken)', borderLeft:'1px solid var(--border)'}}>
@@ -721,7 +1050,20 @@ function App() {
 
               {rightMode === 'edit' && selectedId ? (
                 <Inspector
-                  block={blocks.find(b => b.id === selectedId)}
+                  block={(() => {
+                    // Search top-level then inside section columns
+                    const top = blocks.find(b => b.id === selectedId);
+                    if (top) return top;
+                    for (const x of blocks) {
+                      if (x.type === 'section' && Array.isArray(x.columns)) {
+                        for (const col of x.columns) {
+                          const inner = (col.blocks || []).find(ib => ib.id === selectedId);
+                          if (inner) return inner;
+                        }
+                      }
+                    }
+                    return null;
+                  })()}
                   onUpdate={updateBlock}
                   onClose={() => { setSelectedId(null); setRightMode('preview'); }}
                   onDelete={deleteBlock}
@@ -729,6 +1071,7 @@ function App() {
                   lang={lang}
                   setLang={setLang}
                   onOpenBackoffice={isAdmin ? goBackoffice : null}
+                  appState={appState}
                 />
               ) : rightMode === 'edit' ? (
                 <div style={{padding:40, textAlign:'center', color:'var(--text-muted)', fontSize:13, flex:1, display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', gap:10}}>
@@ -760,6 +1103,7 @@ function App() {
           setBrandFilter={setBrandFilter}
           onLoadTemplateInCompositor={(tplId) => loadTemplateIntoCanvas(tplId)}
           currentUser={currentUser}
+          lang={lang}
           isItemHidden={isItemHidden}
           setItemHiddenForCurrentUser={setItemHiddenForCurrentUser}
           autoHideForOthers={autoHideForOthers}
@@ -775,7 +1119,7 @@ function App() {
         <span className="dot" />
         <span>{(appState.products || []).length} productos · {(appState.templates || []).length} plantillas</span>
         <div style={{marginLeft:'auto', display:'flex', gap:16, alignItems:'center'}}>
-          <span>v3.0</span>
+          <span>v4.0 · AI agent</span>
           <span className="dot" />
           <span>⌘K para comandos</span>
         </div>

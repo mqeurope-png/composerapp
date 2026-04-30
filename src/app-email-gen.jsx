@@ -226,6 +226,65 @@ function pimpamHeroHtml(config, lang) {
     '</td></tr></table></td></tr>'
 }
 
+/* Single-image block. Renders an <img> centered (or aligned) with optional
+   <a href> wrapper. Designed to look right inside a 280-300px column or at
+   full 600px width. */
+function imageBlockHtml(b) {
+  const src = (b && b.src) || ''
+  if (!src) return ''
+  const align = b.align || 'center'
+  const widthPct = (typeof b.widthPct === 'number' && b.widthPct > 0 && b.widthPct <= 100) ? b.widthPct : 100
+  const alt = escapeHtml(b.alt || '')
+  let img = '<img src="' + escapeHtml(src) + '" alt="' + alt + '" style="width:' + widthPct + '%;max-width:100%;height:auto;border-radius:6px;display:block;margin:0 auto" />'
+  if (b.link) img = '<a href="' + escapeHtml(b.link) + '" target="_blank" style="text-decoration:none;display:block">' + img + '</a>'
+  return '<tr><td align="' + align + '" style="padding:8px 20px">' + img + '</td></tr>'
+}
+
+/* Call-to-action card. Optional title / subtitle / bullets above a styled
+   button. Uses <table> for Outlook compatibility. The whole card sits on
+   an optional background "panel" (panelBg / panelBorder) so it can stand
+   out from surrounding content. */
+function ctaBlockHtml(b) {
+  b = b || {}
+  const text = escapeHtml(b.text || 'Más información')
+  const rawUrl = (b.url || '').trim()
+  const hasUrl = rawUrl && rawUrl !== '#'
+  const bg = b.bg || '#1d4ed8'
+  const color = b.color || '#ffffff'
+  const align = b.align || 'center'
+  const title = b.title || ''
+  const subtitle = b.subtitle || ''
+  const bullets = Array.isArray(b.bullets) ? b.bullets.filter(x => x && String(x).trim()) : []
+  const panelBg = b.panelBg && b.panelBg !== 'transparent' ? b.panelBg : ''
+  const panelBorder = b.panelBorder && b.panelBorder !== 'transparent' ? b.panelBorder : ''
+  let inner = ''
+  if (title) inner += '<h3 style="margin:0 0 6px;font-size:16px;font-weight:700;color:#1a1918;line-height:1.3">' + escapeHtml(title) + '</h3>'
+  if (subtitle) inner += '<p style="margin:0 0 10px;font-size:13px;color:#475569;line-height:1.5">' + escapeHtml(subtitle) + '</p>'
+  if (bullets.length) {
+    inner += '<ul style="margin:0 0 14px;padding:0 0 0 18px;font-size:13px;color:#334155;line-height:1.55">'
+    bullets.forEach(bp => { inner += '<li style="margin:0 0 4px">' + escapeHtml(bp) + '</li>' })
+    inner += '</ul>'
+  }
+  // When no URL is set, render the button as a styled <span> instead of an
+  // <a>. Visually identical, but not clickable — and email clients like
+  // Gmail will let the user paste a real URL afterwards while keeping the
+  // styling. Avoids the misleading href="#" that goes nowhere.
+  const buttonSharedStyle = 'display:inline-block;padding:10px 22px;font-size:13px;font-weight:600;color:' + color + ';text-decoration:none;font-family:Helvetica,Arial,sans-serif'
+  const button = hasUrl
+    ? ('<a href="' + escapeHtml(rawUrl) + '" target="_blank" style="' + buttonSharedStyle + '">' + text + '</a>')
+    : ('<!-- TODO: añadir URL al CTA antes de enviar --><span style="' + buttonSharedStyle + ';cursor:default">' + text + '</span>')
+  inner +=
+    '<table cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 auto"><tr>' +
+    '<td style="background:' + bg + ';border-radius:6px;padding:0">' +
+      button +
+    '</td></tr></table>'
+  const panelStyle = (panelBg ? 'background:' + panelBg + ';' : '') + (panelBorder ? 'border:1px solid ' + panelBorder + ';' : '') + 'border-radius:8px;padding:' + (panelBg || panelBorder ? '16px 18px' : '0')
+  if (panelBg || panelBorder) {
+    return '<tr><td style="padding:8px 20px"><div style="' + panelStyle + ';text-align:' + align + '">' + inner + '</div></td></tr>'
+  }
+  return '<tr><td align="' + align + '" style="padding:8px 20px">' + inner + '</td></tr>'
+}
+
 function pimpamStepsHtml(config, lang) {
   const cfg = config || {}
   const steps = cfg.steps || [
@@ -282,49 +341,73 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
     return block
   }
 
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i]
+  // Render one block to its <tr>...</tr> rows. Extracted so section blocks
+  // can recurse into their column-children without duplicating the dispatch.
+  function renderBlock(b) {
+    let out = ''
+    switch (b.type) {
+      case 'section': {
+        const cols = Array.isArray(b.columns) ? b.columns : []
+        const colCount = cols.length || 2
+        const colW = Math.floor(600 / colCount)
+        out += '<tr><td style="padding:0">'
+        out += '<table class="section-row" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto"><tr>'
+        cols.forEach((col, ci) => {
+          out += '<td class="col-' + (colCount === 2 ? 'half' : 'third') + '" valign="top" align="left" width="' + colW + '" style="vertical-align:top;width:' + colW + 'px;padding:0 6px">'
+          out += '<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+          ;(col.blocks || []).forEach(ib => { out += renderBlock(ib) })
+          out += '</table>'
+          out += '</td>'
+        })
+        out += '</tr></table></td></tr>'
+        return out
+      }
+      default: break
+    }
+    // Fallthrough: original switch
     switch (b.type) {
       case 'text': {
         const resolvedText = resolveText(b)
-        if (resolvedText) rows += textBlockHtml(resolvedText, { fontSize: b.fontSize, align: b.align })
+        if (resolvedText) out += textBlockHtml(resolvedText, { fontSize: b.fontSize, align: b.align })
         break
       }
-      case 'brand_artisjet': rows += brandStripHtml(b.brand||'artisjet', lang, brands); break
-      case 'brand_mbo': rows += brandStripHtml(b.brand||'mbo', lang, brands); break
-      case 'brand_pimpam': rows += brandStripHtml(b.brand||'pimpam', lang, brands); break
-      case 'brand_smartjet': rows += brandStripHtml(b.brand||'smartjet', lang, brands); break
-      case 'brand_flux': rows += brandStripHtml(b.brand||'flux', lang, brands); break
-      case 'brand_strip': rows += brandStripHtml(b.brand||'artisjet', lang, brands); break
+      case 'brand_artisjet': out += brandStripHtml(b.brand||'artisjet', lang, brands); break
+      case 'brand_mbo': out += brandStripHtml(b.brand||'mbo', lang, brands); break
+      case 'brand_pimpam': out += brandStripHtml(b.brand||'pimpam', lang, brands); break
+      case 'brand_smartjet': out += brandStripHtml(b.brand||'smartjet', lang, brands); break
+      case 'brand_flux': out += brandStripHtml(b.brand||'flux', lang, brands); break
+      case 'brand_strip': out += brandStripHtml(b.brand||'artisjet', lang, brands); break
       case 'product_single': {
         let ps = products.find(p => p.id === b.product1)
-        if (ps) { ps = getLocalizedProduct(ps, lang); rows += productSingleHtml(ps, lang) }
+        if (ps) { ps = getLocalizedProduct(ps, lang); out += productSingleHtml(ps, lang) }
         break
       }
       case 'product_pair': {
         let p1 = products.find(p => p.id === b.product1)
         let p2 = products.find(p => p.id === b.product2)
-        if (p1 && p2) { p1 = getLocalizedProduct(p1, lang); p2 = getLocalizedProduct(p2, lang); rows += productPairHtml(p1, p2, lang) }
+        if (p1 && p2) { p1 = getLocalizedProduct(p1, lang); p2 = getLocalizedProduct(p2, lang); out += productPairHtml(p1, p2, lang) }
         break
       }
       case 'product_trio': {
         let pt1 = products.find(p => p.id === b.product1)
         let pt2 = products.find(p => p.id === b.product2)
         let pt3 = products.find(p => p.id === b.product3)
-        if (pt1 && pt2 && pt3) { pt1 = getLocalizedProduct(pt1, lang); pt2 = getLocalizedProduct(pt2, lang); pt3 = getLocalizedProduct(pt3, lang); rows += productTrioHtml(pt1, pt2, pt3, lang) }
+        if (pt1 && pt2 && pt3) { pt1 = getLocalizedProduct(pt1, lang); pt2 = getLocalizedProduct(pt2, lang); pt3 = getLocalizedProduct(pt3, lang); out += productTrioHtml(pt1, pt2, pt3, lang) }
         break
       }
       case 'freebird':
-      case 'video': rows += freebirdHtml(b.config || b, lang); break
+      case 'video': out += freebirdHtml(b.config || b, lang); break
+      case 'image': out += imageBlockHtml(b); break
+      case 'cta': out += ctaBlockHtml(b); break
       case 'hero':
       case 'product_hero':
       case 'pimpam_hero': {
         const heroData = resolveHero(b)
-        if (heroData === b) rows += pimpamHeroHtml(b, lang)
-        else rows += pimpamHeroHtml(heroData, null)
+        if (heroData === b) out += pimpamHeroHtml(b, lang)
+        else out += pimpamHeroHtml(heroData, null)
         break
       }
-      case 'pimpam_steps': rows += pimpamStepsHtml(b.config || b, lang); break
+      case 'pimpam_steps': out += pimpamStepsHtml(b.config || b, lang); break
       case 'composed': {
         const ibs = b.innerBlocks || []
         if (ibs.length === 0) {
@@ -340,35 +423,41 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
         ibs.forEach(ib => {
           if (ib.type === 'text') {
             const ibText = resolveText(ib)
-            if (ibText) rows += textBlockHtml(ibText)
+            if (ibText) out += textBlockHtml(ibText)
           } else if (ib.type === 'brand_strip' && ib.brand) {
-            rows += brandStripHtml(ib.brand, lang, brands)
+            out += brandStripHtml(ib.brand, lang, brands)
           } else if (ib.type === 'pimpam_hero') {
             const ibHero = resolveHero(ib)
-            if (ibHero === ib) rows += pimpamHeroHtml(ib.heroImage ? ib : b, lang)
-            else rows += pimpamHeroHtml(ibHero, null)
+            if (ibHero === ib) out += pimpamHeroHtml(ib.heroImage ? ib : b, lang)
+            else out += pimpamHeroHtml(ibHero, null)
           } else if (ib.type === 'pimpam_steps') {
-            rows += pimpamStepsHtml(ib.steps ? ib : b, lang)
+            out += pimpamStepsHtml(ib.steps ? ib : b, lang)
           } else if (ib.type === 'separator') {
-            rows += '<tr><td style="padding:8px 20px"><hr style="border:none;border-top:1px solid #e5e7eb;margin:0"></td></tr>'
+            out += '<tr><td style="padding:8px 20px"><hr style="border:none;border-top:1px solid #e5e7eb;margin:0"></td></tr>'
           } else if (ib.type === 'product_trio') {
             let ct1 = products.find(p => p.id === ib.product1)
             let ct2 = products.find(p => p.id === ib.product2)
             let ct3 = products.find(p => p.id === ib.product3)
-            if (ct1 && ct2 && ct3) { ct1 = getLocalizedProduct(ct1, lang); ct2 = getLocalizedProduct(ct2, lang); ct3 = getLocalizedProduct(ct3, lang); rows += productTrioHtml(ct1, ct2, ct3, lang) }
+            if (ct1 && ct2 && ct3) { ct1 = getLocalizedProduct(ct1, lang); ct2 = getLocalizedProduct(ct2, lang); ct3 = getLocalizedProduct(ct3, lang); out += productTrioHtml(ct1, ct2, ct3, lang) }
           } else if (ib.type === 'product_pair') {
             let cp1 = products.find(p => p.id === ib.product1)
             let cp2 = products.find(p => p.id === ib.product2)
-            if (cp1 && cp2) { cp1 = getLocalizedProduct(cp1, lang); cp2 = getLocalizedProduct(cp2, lang); rows += productPairHtml(cp1, cp2, lang) }
+            if (cp1 && cp2) { cp1 = getLocalizedProduct(cp1, lang); cp2 = getLocalizedProduct(cp2, lang); out += productPairHtml(cp1, cp2, lang) }
           } else if (ib.type === 'product_single') {
             let cps = products.find(p => p.id === ib.product1)
-            if (cps) { cps = getLocalizedProduct(cps, lang); rows += productSingleHtml(cps, lang) }
+            if (cps) { cps = getLocalizedProduct(cps, lang); out += productSingleHtml(cps, lang) }
           }
         })
         break
       }
     }
+    return out
   }
+
+  for (let i = 0; i < blocks.length; i++) {
+    rows += renderBlock(blocks[i])
+  }
+
   return '<html><head>'+CSS_BLOCK+'</head><body style="font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;margin:0;padding:0;background:#ffffff;color:#1e293b">' +
     '<table class="wrap" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto">' + rows + '</table></body></html>'
 }
@@ -397,6 +486,19 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
 
   for (const b of (v3Blocks || [])) {
     switch (b.type) {
+      // ─── section (multi-column) — recursively transform inner blocks ──
+      case 'section': {
+        const cols = Array.isArray(b.columns) ? b.columns : []
+        out.push({
+          id: b.id,
+          type: 'section',
+          layout: b.layout,
+          columns: cols.map(col => ({
+            blocks: v3BlocksToV2Blocks(col.blocks || [], appState),
+          })),
+        })
+        break
+      }
       // ─── text ────────────────────────────────────────────────
       case 'text': {
         const src = b.textId
@@ -482,7 +584,10 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
           heroCtaText: b.heroCtaText || phSbConf.heroCtaText,
           heroCtaUrl: b.heroCtaUrl || phSbConf.heroCtaUrl,
           heroImageLink: b.heroImageLink || phSbConf.heroImageLink,
-          i18n: phSbConf.i18n,
+          // Block-level i18n wins over standalone-source i18n. This is what
+          // makes a product_hero materialized in addBlock() switch language
+          // when the user changes lang.
+          i18n: b.i18n || phSbConf.i18n,
         })
         break
       }
@@ -512,6 +617,13 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
             thumbnailOverride: b.thumbnailOverride || vSbConf.thumbnailOverride,
           }
         })
+        break
+      }
+
+      // ─── image / cta — pass through unchanged (renderBlock handles them)
+      case 'image':
+      case 'cta': {
+        out.push(Object.assign({}, b))
         break
       }
 

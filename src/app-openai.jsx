@@ -135,9 +135,77 @@ function callOpenAI({ notes, lang, mode, existing }) {
   })
 }
 
+/* Bulk-translate short labels (template/composed/prewritten/standalone names
+   and descs) into multiple languages in one round-trip. Returns
+   Promise<{ [index]: { fr, de, en, nl } }>.
+
+   `items` is an array of { i: number, text: string } and `targetLangs` is
+   ['fr','de','en','nl'] (or any subset). The model is asked to preserve
+   machine model names (artisJet 5000U, MBO 4060, FLUX, etc.), brand names
+   and proper nouns verbatim. */
+function callOpenAITranslateBatch({ items, targetLangs }) {
+  const key = (getOpenaiKey() || '').trim()
+  if (!key) return Promise.reject(new Error('Configura tu API key de OpenAI en Backoffice → Asistente IA'))
+  if (!key.startsWith('sk-')) return Promise.reject(new Error('La API key no parece válida (debería empezar por "sk-")'))
+  if (!Array.isArray(items) || items.length === 0) return Promise.resolve({})
+  const langs = (targetLangs && targetLangs.length) ? targetLangs : ['fr','de','en','nl']
+  const langList = langs.map(L => L + ' (' + (LANG_NAME_MAP[L] || L) + ')').join(', ')
+
+  const systemPrompt = (
+    'You translate UI labels, descriptions and short body texts for an email composer used by a Spanish distributor of UV-LED printers. '
+    + 'CRITICAL: never translate machine model names (artisJet 5000U, artisJet 3000pro, artisJet Proud, artisJet 6090Trust, '
+    + 'artisJet Young, MBO 3050, MBO 4060, MBO 6090, MBO 1015, UV1612G, UV1812, UV2513, PimPam Vending, CaseBox, Custom, '
+    + 'FLUX, Beamo, Beambox, SmartJet, SmartJet FLEX, Freebird, HP PageWide, INTEGRA), brand names, SKUs or product codes '
+    + '— keep them verbatim. Translate only the surrounding words. '
+    + 'Even when an input string LOOKS short or contains a machine name, you MUST still translate the non-name words around it '
+    + '(e.g. "Compactas UV-LED" → English: "Compact UV-LED"; "Gama completa" → English: "Full range"). '
+    + 'Match the source register and length. Preserve emojis, line breaks (\\n), punctuation and capitalization style. '
+    + 'Currency: keep €, but translate "desde" / "hasta" / units. '
+    + 'Return ONLY a valid JSON object, no markdown, no commentary.'
+  )
+
+  const userPrompt = (
+    'Translate the "text" of each item from Spanish into: ' + langList + '.\n'
+    + 'Return a JSON object whose keys are the item indices (as strings) and whose values are objects with the language codes as keys. Example shape:\n'
+    + '{"0":{"fr":"…","de":"…","en":"…","nl":"…"}, "1":{...}}\n\n'
+    + 'Items:\n'
+    + JSON.stringify(items)
+  )
+
+  return fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 4000,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+    }),
+  }).then(async r => {
+    if (!r.ok) {
+      let detail = ''
+      try { const j = await r.json(); detail = j.error?.message || JSON.stringify(j) } catch (e) { detail = await r.text() }
+      throw new Error('OpenAI ' + r.status + ': ' + detail.slice(0, 240))
+    }
+    return r.json()
+  }).then(data => {
+    if (data.error) throw new Error(data.error.message || 'Error OpenAI')
+    const raw = data?.choices?.[0]?.message?.content || ''
+    let parsed
+    try { parsed = JSON.parse(raw) } catch (e) {
+      throw new Error('Respuesta OpenAI no es JSON válido: ' + raw.slice(0, 120))
+    }
+    return parsed || {}
+  })
+}
+
 Object.assign(window, {
   LANG_NAME_MAP, DEFAULT_AI_STYLES,
   getOpenaiKey, setOpenaiKey,
   getAiStyles, saveAiStyle,
-  callOpenAI,
+  callOpenAI, callOpenAITranslateBatch,
 })
