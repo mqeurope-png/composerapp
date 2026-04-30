@@ -395,20 +395,39 @@ function App() {
     const expanded = [];
 
     // Inline blocks (newer Supabase schema) — pass through verbatim, normalising
-    // text blocks to v3's _overrides shape so i18n + body survive.
+    // text blocks to v3's overridesByLang shape so i18n + body survive.
     if (Array.isArray(tpl.compositorBlocks) && tpl.compositorBlocks.length > 0) {
       for (const cb of tpl.compositorBlocks) {
         if (!cb || !cb.type) continue;
         if (cb.type === 'text') {
-          // v3 text blocks store translations in `overridesByLang` (the v3→v2
-          // converter in app-email-gen.jsx only reads from this field).
-          const overridesByLang = { es: cb.text || '' };
-          if (cb.i18n) {
-            for (const [l, v] of Object.entries(cb.i18n)) {
-              if (v && v.text) overridesByLang[l] = v.text;
+          // Aceptamos las tres formas en las que puede venir un texto:
+          // (1) overridesByLang (forma moderna que escribe el editor de
+          //     plantillas/compuestos del backoffice + el composer);
+          // (2) text + i18n (schema viejo de Supabase / plantillas guardadas
+          //     antes del refactor); (3) ambas mezcladas.
+          // Antes solo leíamos cb.text → si la plantilla había sido editada
+          // en el editor nuevo del BO (que escribe overridesByLang y limpia
+          // text/i18n), al cargar la plantilla en el composer aparecía el
+          // texto vacío. Bug Apr 2026.
+          let overridesByLang = null;
+          if (cb.overridesByLang && typeof cb.overridesByLang === 'object') {
+            overridesByLang = Object.assign({}, cb.overridesByLang);
+          } else if (cb.text != null || cb.i18n) {
+            overridesByLang = { es: cb.text || '' };
+            if (cb.i18n) {
+              for (const [l, v] of Object.entries(cb.i18n)) {
+                if (v && v.text) overridesByLang[l] = v.text;
+              }
             }
+          } else {
+            overridesByLang = { es: '' };
           }
-          expanded.push({ type: 'text', overridesByLang });
+          // Mantener textId si la plantilla referenciaba un texto pre-escrito.
+          const textBlock = { type: 'text', overridesByLang };
+          if (cb.textId) textBlock.textId = cb.textId;
+          if (cb._richHtml != null) textBlock._richHtml = cb._richHtml;
+          if (cb._richHtmlByLang) textBlock._richHtmlByLang = cb._richHtmlByLang;
+          expanded.push(textBlock);
         } else {
           // Pass through other block kinds (product_pair, product_trio, brand_strip, pimpam_hero, etc.)
           expanded.push(Object.assign({}, cb));

@@ -553,9 +553,32 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
       // ─── text ────────────────────────────────────────────────
       case 'text': {
         const src = b.textId
+        // Construir el bag de overrides aceptando los tres formatos que
+        // pueden llegar aquí: (1) `overridesByLang` (forma moderna v3),
+        // (2) `overrideText` (legacy single-shot ES), (3) `text` + `i18n`
+        // (forma de plantillas/compuestos guardados en Supabase con el
+        // schema antiguo). Sin el caso 3, los textos viejos de plantillas
+        // pasaban como undefined al renderer y se renderizaban en blanco
+        // (visible en el preview del editor BO antes de tocar nada).
+        // Bug Apr 2026.
+        const buildOverrides = () => {
+          if (b.overridesByLang) return b.overridesByLang
+          if (b.overrideText) return { es: b.overrideText }
+          if (b.text != null || b.i18n) {
+            const o = { es: b.text || '' }
+            if (b.i18n) {
+              for (const [l, v] of Object.entries(b.i18n)) {
+                if (v && v.text != null) o[l] = v.text
+              }
+            }
+            return o
+          }
+          return undefined
+        }
+        const overrides = buildOverrides()
         const base = src
-          ? { type:'text', _sourceType:'prewritten', _sourceId:src, _overrides:b.overridesByLang }
-          : { type:'text', _sourceType:'manual', _overrides:b.overridesByLang || (b.overrideText ? { es:b.overrideText } : undefined) }
+          ? { type:'text', _sourceType:'prewritten', _sourceId:src, _overrides:overrides }
+          : { type:'text', _sourceType:'manual', _overrides:overrides }
         if (b._richHtml != null) base._richHtml = b._richHtml
         if (b._richHtmlByLang) base._richHtmlByLang = b._richHtmlByLang
         // Carry the typography fields through so the renderer can apply them
