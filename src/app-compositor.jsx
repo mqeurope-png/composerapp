@@ -1340,15 +1340,6 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, se
     setHtmlMenu(false);
   };
 
-  const handleSend = async () => {
-    // Copy HTML as rich so Gmail/Outlook pastes the rendered email, then
-    // open a blank mailto so the user picks the recipient.
-    if (typeof copyHtmlAsRich === 'function') await copyHtmlAsRich(emailHtml || '');
-    const subject = encodeURIComponent('Información Bomedia · Impresoras UV-LED');
-    window.location.href = 'mailto:?subject=' + subject;
-    showToast('HTML copiado · pégalo en el cuerpo del email');
-  };
-
   const handleClear = () => {
     if (blocks.length === 0) return;
     const ok = window.confirm('¿Vaciar el lienzo? Se eliminarán los ' + blocks.length + ' bloques actuales.');
@@ -1459,9 +1450,6 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, se
                 </div>
               )}
             </div>
-            <button className="btn btn-primary" onClick={handleSend} disabled={inTplMode}>
-              <Icon name="send" size={14} /> Enviar
-            </button>
           </div>
         </div>
         {toast && <div className="canvas-toast">{toast}</div>}
