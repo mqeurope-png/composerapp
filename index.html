@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -6,7 +6,7 @@
 <!-- Content Security Policy: limits which origins can load scripts, styles,
      fonts, images and which APIs the page may contact. Reduces XSS surface
      for the public deploy. 'unsafe-inline' on style is required by the
-     in-line style="…" attributes scattered through the JSX renderers; the
+     in-line style="â€¦" attributes scattered through the JSX renderers; the
      'unsafe-eval' on script is required by Babel-standalone. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
@@ -20,7 +20,7 @@
   form-action 'self';
   object-src 'none';
 ">
-<title>Bomedia Email Composer · v4 (AI agent)</title>
+<title>Bomedia Email Composer Â· v4 (AI agent)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -29,7 +29,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <style>
   :root {
-    /* Base neutrals — warm slate */
+    /* Base neutrals â€” warm slate */
     --bg:         #f7f6f3;
     --bg-panel:   #ffffff;
     --bg-sunken:  #f1efea;
@@ -41,7 +41,7 @@
     --text-muted: #6b6960;
     --text-subtle:#9c9a91;
 
-    /* Brand accents — quieter, unified chroma */
+    /* Brand accents â€” quieter, unified chroma */
     --artisjet: oklch(55% 0.18 255);
     --mbo:      oklch(55% 0.18 295);
     --mbo_dtf:  oklch(60% 0.22 0);
@@ -148,7 +148,7 @@
   .scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
   .scroll::-webkit-scrollbar-track { background: transparent; }
 
-  /* ───── APP SHELL ───── */
+  /* â”€â”€â”€â”€â”€ APP SHELL â”€â”€â”€â”€â”€ */
   .app-shell {
     display: grid;
     grid-template-rows: 52px 1fr 28px;
@@ -313,7 +313,7 @@
   [data-theme="dark"] .btn-accent { color: var(--bg); }
   .btn-accent:hover { filter: brightness(1.05); }
 
-  /* Main layout — right panel width is driven by --right-panel-w (set in JS,
+  /* Main layout â€” right panel width is driven by --right-panel-w (set in JS,
      persisted to localStorage). Default 560 so the email design width
      (620px) shows almost without scaling. */
   .main {
@@ -479,7 +479,7 @@
   }
   [data-theme="dark"] .brand-chip.active { background: var(--accent); color: var(--bg); }
 
-  /* Secondary filter chips (type / price) — slimmer, lower contrast than brand chips */
+  /* Secondary filter chips (type / price) â€” slimmer, lower contrast than brand chips */
   .filter-row {
     display: flex;
     gap: 4px;
@@ -778,10 +778,10 @@
   .block:hover { border-color: var(--border-strong); box-shadow: var(--sh-sm); }
   .block.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   /* Drag-drop reorder visual feedback. The bar shows where the dragged
-     block will land — top edge = insert before; bottom edge = insert after. */
+     block will land â€” top edge = insert before; bottom edge = insert after. */
   .block.drop-top { box-shadow: 0 -3px 0 0 var(--accent), var(--sh-sm); }
   .block.drop-bottom { box-shadow: 0 3px 0 0 var(--accent), var(--sh-sm); }
-  /* Sections need overflow:visible so the "+ Añadir a columna" popover and
+  /* Sections need overflow:visible so the "+ AÃ±adir a columna" popover and
      any other absolutely-positioned children can render outside the block's
      border without being clipped. */
   .block.section-block { overflow: visible; }
@@ -909,7 +909,7 @@
     outline: none;
   }
 
-  /* Insert zone — always visible (low opacity), expands on hover */
+  /* Insert zone â€” always visible (low opacity), expands on hover */
   .insert-zone {
     height: 22px;
     position: relative;
@@ -1557,7 +1557,7 @@
     font-weight: 500;
   }
 
-  /* ───── Inspector (edit panel) ───── */
+  /* â”€â”€â”€â”€â”€ Inspector (edit panel) â”€â”€â”€â”€â”€ */
   .inspector {
     background: var(--bg-panel);
     border-left: 1px solid var(--border);
@@ -2210,26 +2210,26 @@
 <body>
 <div id="root"></div>
 
-<!-- Business logic modules (ported from v2) — loaded BEFORE the UI so globals exist. -->
+<!-- Business logic modules (ported from v2) â€” loaded BEFORE the UI so globals exist. -->
 <script>window.__bv = '20260429a'</script>
-<script type="text/babel" data-presets="react" src="src/app-data.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-i18n.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-security.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-supabase.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-openai.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-email-gen.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-rich-editor.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-ai-agent.jsx?v=20260430v4y"></script>
+<script type="text/babel" data-presets="react" src="src/app-data.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-i18n.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-security.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-supabase.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-openai.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-email-gen.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-rich-editor.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-ai-agent.jsx?v=20260430v5a"></script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-/* ───────────── ICONS (data lives in src/app-data.jsx) ───────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ ICONS (data lives in src/app-data.jsx) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /* BRANDS, PRODUCTS, PREWRITTEN_TEXTS, TEMPLATES, STANDALONE_BLOCKS
    are now declared in src/app-data.jsx (ported from v2). */
 
-/* ───────────── ICONS ───────────── */
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ ICONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const Icon = ({ name, size=16 }) => {
   const paths = {
     search: <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>,
@@ -2278,10 +2278,10 @@ Object.assign(window, { Icon });
 </script>
 
 <!-- UI Components -->
-<script type="text/babel" data-presets="react" src="src/app-compositor.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-inspector.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-backoffice.jsx?v=20260430v4y"></script>
-<script type="text/babel" data-presets="react" src="src/app-main.jsx?v=20260430v4y"></script>
+<script type="text/babel" data-presets="react" src="src/app-compositor.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-inspector.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-backoffice.jsx?v=20260430v5a"></script>
+<script type="text/babel" data-presets="react" src="src/app-main.jsx?v=20260430v5a"></script>
 
 </body>
 </html>

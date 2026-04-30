@@ -562,6 +562,9 @@ function App() {
       compositorBlocks: compBlocks,
       blocks: [],
       visible: true,
+      // Stamp ownership for commercial creators so the BO can show a "Tuyo"
+      // badge. Admin-created templates are visible to everyone (no stamp).
+      ...(currentUser && currentUser.role !== 'admin' ? { createdBy: currentUser.id, createdAt: Date.now() } : {}),
     };
     setAppState(prev => ({
       ...prev,
@@ -811,6 +814,116 @@ function App() {
 
   const updateBlock = (id, b) => setBlocks(prev => _mapBlocks(prev, x => x.id === id ? b : x));
   const deleteBlock = (id) => setBlocks(prev => _filterBlocks(prev, x => x.id !== id));
+
+  // "Desagrupar" — replaces a composed block with its constituent child blocks
+  // (intro text + brand strip + products + optional hero/steps), so each piece
+  // can be edited / removed independently. Each child gets a fresh id.
+  // Same expansion logic email-gen uses at render time, but materialised as
+  // editable canvas blocks. The composed block's `i18n.{lang}.introText` is
+  // copied into the new text block's `overridesByLang` so translations survive.
+  const ungroupComposedBlock = (id) => {
+    const cb = (appState.composedBlocks || []).find(c => c.id === id);
+    // Note: the canvas may store `composedId` referencing the source — find
+    // the actual block in the canvas (top-level or inside a section column)
+    // and use its composedId to look up the source.
+    const findCanvasBlock = (list) => {
+      for (const x of list) {
+        if (x.id === id) return x;
+        if (x.type === 'section' && Array.isArray(x.columns)) {
+          for (const col of x.columns) {
+            const inner = (col.blocks || []).find(ib => ib.id === id);
+            if (inner) return inner;
+          }
+        }
+      }
+      return null;
+    };
+    const canvasBlock = findCanvasBlock(blocks);
+    if (!canvasBlock || canvasBlock.type !== 'composed') return;
+    const sourceId = canvasBlock.composedId;
+    const source = (appState.composedBlocks || []).find(c => c.id === sourceId);
+    if (!source) return;
+
+    // Build child blocks from the source.
+    const children = [];
+    // 1. Intro text (with i18n)
+    if (source.introText) {
+      const overridesByLang = { es: source.introText };
+      if (source.i18n) {
+        for (const [l, v] of Object.entries(source.i18n)) {
+          if (v && v.introText) overridesByLang[l] = v.introText;
+        }
+      }
+      children.push({ id: mkId(), type: 'text', overridesByLang });
+    }
+    // 2. Brand strip
+    if (source.brandStrip && source.brandStrip !== 'none') {
+      children.push({ id: mkId(), type: 'brand_strip', brand: source.brandStrip });
+    }
+    // 3. Products — respect blockType (single/pair/trio)
+    const prods = source.products || [];
+    if (source.blockType === 'product_trio' && prods.length >= 3) {
+      children.push({ id: mkId(), type: 'product_trio', product1: prods[0], product2: prods[1], product3: prods[2] });
+    } else if (source.blockType === 'product_pair' && prods.length >= 2) {
+      children.push({ id: mkId(), type: 'product_pair', product1: prods[0], product2: prods[1] });
+    } else if (source.blockType === 'product_single' && prods.length >= 1) {
+      children.push({ id: mkId(), type: 'product_single', product1: prods[0] });
+    } else {
+      for (const pid of prods) children.push({ id: mkId(), type: 'product_single', product1: pid });
+    }
+    // 4. Hero / steps — link to the first matching standalone (same logic as
+    // email-gen + expandTemplate)
+    if (source.includeHero) {
+      const heroSb = (appState.standaloneBlocks || []).find(s => s.blockType === 'pimpam_hero');
+      if (heroSb) {
+        children.push({
+          id: mkId(),
+          type: 'pimpam_hero',
+          standaloneId: heroSb.id,
+          _sourceType: 'standalone',
+          _sourceId: heroSb.id,
+        });
+      }
+    }
+    if (source.includeSteps) {
+      const stepsSb = (appState.standaloneBlocks || []).find(s => s.blockType === 'pimpam_steps');
+      if (stepsSb) {
+        children.push({
+          id: mkId(),
+          type: 'pimpam_steps',
+          standaloneId: stepsSb.id,
+          _sourceType: 'standalone',
+          _sourceId: stepsSb.id,
+        });
+      }
+    }
+    if (children.length === 0) return;
+
+    // Replace the composed block with its expanded children — at top level OR
+    // inside a section column.
+    setBlocks(prev => {
+      const ti = prev.findIndex(x => x.id === id);
+      if (ti >= 0) {
+        return [...prev.slice(0, ti), ...children, ...prev.slice(ti + 1)];
+      }
+      return prev.map(x => {
+        if (x.type !== 'section' || !Array.isArray(x.columns)) return x;
+        return {
+          ...x,
+          columns: x.columns.map(col => {
+            const ii = (col.blocks || []).findIndex(ib => ib.id === id);
+            if (ii < 0) return col;
+            return {
+              ...col,
+              blocks: [...(col.blocks || []).slice(0, ii), ...children, ...(col.blocks || []).slice(ii + 1)],
+            };
+          }),
+        };
+      });
+    });
+    setSelectedId(null);
+  };
+
   const duplicateBlock = (id) => setBlocks(prev => {
     // Top-level duplicate first
     const ti = prev.findIndex(x => x.id === id);
@@ -1096,6 +1209,7 @@ function App() {
             onMove={moveBlock}
             onReorder={reorderBlocks}
             onDuplicate={duplicateBlock}
+            onUngroup={ungroupComposedBlock}
             selectedId={selectedId}
             setSelectedId={(id) => { setSelectedId(id); if (id) setRightMode('edit'); }}
             onOpenPalette={(idx) => {

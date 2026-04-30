@@ -539,6 +539,13 @@ function MiniProduct({ p, lang, compact }) {
     );
   }
   const lp = (typeof getLocalizedProduct === 'function') ? getLocalizedProduct(p, lang) : p;
+  // Fixed-height image area so two cards rendered side-by-side in the same
+  // row (product_pair / product_trio) start at the same vertical position
+  // regardless of the source image aspect ratio. Without this, a wide-but-
+  // short image left a smaller box and pushed the title up, while a tall
+  // image filled the box and pushed the title down — the two cards looked
+  // unaligned even though they shared a grid row.
+  const imgBoxH = compact ? 70 : 100;
   return (
     <div style={{
       border: '1px solid ' + (p.brand === 'pimpam' ? '#fed7aa' : 'var(--border)'),
@@ -546,9 +553,18 @@ function MiniProduct({ p, lang, compact }) {
       background: p.brand === 'pimpam' ? '#fff7ed' : 'var(--bg-panel)',
       padding: compact ? 8 : 10,
       overflow: 'hidden',
+      display:'flex',
+      flexDirection:'column',
     }}>
-      <div style={{textAlign:'center', marginBottom:6}}>
-        <img src={lp.img} alt="" style={{maxWidth:'100%', maxHeight: compact ? 70 : 100, objectFit:'contain'}} />
+      <div style={{
+        height: imgBoxH,
+        marginBottom: 6,
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        flexShrink: 0,
+      }}>
+        <img src={lp.img} alt="" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} />
       </div>
       {lp.badge && (
         <span style={{
@@ -676,7 +692,7 @@ function InlineTextBlock({ block, text, selected, lang, onUpdate }) {
   );
 }
 
-function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, onMove, onReorder, onDuplicate, lang, onOpenInnerPalette, onPickColumnAdd, appState, isInner, selectedId }) {
+function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, onMove, onReorder, onDuplicate, onUngroup, lang, onOpenInnerPalette, onPickColumnAdd, appState, isInner, selectedId }) {
   // Drag-drop reorder. The block becomes draggable only when the user
   // mousedowns on the .block-handle so clicks elsewhere (inputs, buttons,
   // selects) keep working normally. `dropEdge` is 'top'/'bottom' to draw a
@@ -844,6 +860,7 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
                   onUpdate={onUpdate}
                   onDelete={onDelete}
                   onDuplicate={onDuplicate}
+                  onUngroup={onUngroup}
                   onOpenInnerPalette={onOpenInnerPalette}
                   onPickColumnAdd={onPickColumnAdd}
                   appState={appState}
@@ -929,6 +946,16 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
                 <Icon name="arrowDown" size={13} />
               </button>
             </>
+          )}
+          {block.type === 'composed' && onUngroup && (
+            <button
+              className="block-action"
+              onClick={e => { e.stopPropagation(); onUngroup(block.id); }}
+              title="Desagrupar — convierte el bloque compuesto en sus piezas individuales editables (intro, brand strip, productos, hero/steps)"
+              style={{paddingLeft:8, paddingRight:8, width:'auto', fontSize:11, fontWeight:600, gap:4, display:'inline-flex', alignItems:'center'}}
+            >
+              <Icon name="layers" size={12} /> Desagrupar
+            </button>
           )}
           <button className="block-action" onClick={e => { e.stopPropagation(); onDuplicate(block.id); }} title="Duplicar">
             <Icon name="copy" size={13} />
@@ -1074,7 +1101,7 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
           const p1 = _products.find(x => x.id === block.product1);
           const p2 = _products.find(x => x.id === block.product2);
           return (
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, alignItems:'start'}}>
               <MiniProduct p={p1} lang={lang} />
               <MiniProduct p={p2} lang={lang} />
             </div>
@@ -1086,7 +1113,7 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
           const p2 = _products.find(x => x.id === block.product2);
           const p3 = _products.find(x => x.id === block.product3);
           return (
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6, alignItems:'start'}}>
               <MiniProduct p={p1} lang={lang} compact />
               <MiniProduct p={p2} lang={lang} compact />
               <MiniProduct p={p3} lang={lang} compact />
@@ -1383,7 +1410,7 @@ function ColumnAddPicker({ onPick, columnLabel, appState }) {
   );
 }
 
-function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, selectedId, setSelectedId, onOpenPalette, onOpenInnerPalette, onAddBlock, onAddBlockToColumn, onClearBlocks, onExpandPreview, editingTemplate, onExitTemplateEdit, onSaveCurrentTemplate, onSaveAsTemplate, lang, variant, emailHtml, onUndo, onRedo, appState, onSetBlocks, onSetLang, emailTitle, onEmailTitleChange }) {
+function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, onUngroup, selectedId, setSelectedId, onOpenPalette, onOpenInnerPalette, onAddBlock, onAddBlockToColumn, onClearBlocks, onExpandPreview, editingTemplate, onExitTemplateEdit, onSaveCurrentTemplate, onSaveAsTemplate, lang, variant, emailHtml, onUndo, onRedo, appState, onSetBlocks, onSetLang, emailTitle, onEmailTitleChange }) {
   // AI Agent modal state — opens when user clicks the "✨ IA" button.
   const [agentOpen, setAgentOpen] = React.useState(false);
   const liveTemplates = (typeof window !== 'undefined' && window.TEMPLATES) || TEMPLATES || [];
@@ -1409,6 +1436,76 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, se
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setHtmlMenu(false);
     showToast('HTML descargado');
+  };
+
+  // Export as Word .doc — Word opens HTML files saved with .doc extension and
+  // converts them. We wrap the email HTML with the Word-friendly XML/MS Office
+  // namespace declarations so the document opens cleanly in Word desktop and
+  // Word Online (without those, some versions show a "convert" dialog first).
+  const handleDownloadDoc = () => {
+    const safeTitle = (emailTitle || 'Bomedia email').replace(/[<>&"']/g, '');
+    const docHtml =
+      '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+      'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
+      'xmlns="http://www.w3.org/TR/REC-html40">' +
+      '<head><meta charset="utf-8"><title>' + safeTitle + '</title>' +
+      '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View>' +
+      '<w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' +
+      '<style>body{font-family:Calibri,Arial,sans-serif;}@page{size:auto;margin:1.5cm;}</style>' +
+      '</head><body>' + (emailHtml || '') + '</body></html>';
+    const blob = new Blob(['﻿', docHtml], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bomedia-email-' + new Date().toISOString().slice(0, 10) + '.doc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setHtmlMenu(false);
+    showToast('Documento Word descargado · ábrelo con Word u Office Online');
+  };
+
+  // Export as PDF — opens an off-screen iframe with the email HTML and
+  // triggers the browser print dialog with "Save as PDF" pre-selected. Works
+  // in all modern browsers without extra libraries (no jsPDF/html2canvas
+  // dependency, which kept the v4 "no build step" philosophy intact).
+  const handleDownloadPdf = () => {
+    const safeTitle = (emailTitle || 'Bomedia email').replace(/[<>&"']/g, '');
+    const printHtml =
+      '<!doctype html><html><head><meta charset="utf-8"><title>' + safeTitle + '</title>' +
+      '<style>@page{size:A4;margin:12mm;}body{margin:0;}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style>' +
+      '</head><body>' + (emailHtml || '') + '</body></html>';
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(iframe);
+    const cleanup = () => {
+      try { document.body.removeChild(iframe); } catch (_) {}
+    };
+    iframe.onload = () => {
+      try {
+        const win = iframe.contentWindow;
+        win.focus();
+        // Give layout one tick to settle (especially with images) before printing.
+        setTimeout(() => {
+          try { win.print(); } catch (_) {}
+          // Remove the iframe shortly after — browsers keep it alive while the
+          // print dialog is open, so this just frees DOM after the user closes it.
+          setTimeout(cleanup, 1500);
+        }, 350);
+      } catch (e) {
+        cleanup();
+      }
+    };
+    // Use srcdoc when supported (modern browsers); fall back to document.write.
+    if ('srcdoc' in iframe) {
+      iframe.srcdoc = printHtml;
+    } else {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (doc) { doc.open(); doc.write(printHtml); doc.close(); }
+    }
+    setHtmlMenu(false);
+    showToast('Abriendo diálogo de impresión · selecciona "Guardar como PDF"');
   };
 
   const handleCopyHtml = async () => {
@@ -1523,6 +1620,12 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, se
                   <button className="dropdown-item" onClick={handleDownloadHtml}>
                     <Icon name="download" size={13} /> Descargar .html
                   </button>
+                  <button className="dropdown-item" onClick={handleDownloadPdf}>
+                    <Icon name="download" size={13} /> Exportar a PDF
+                  </button>
+                  <button className="dropdown-item" onClick={handleDownloadDoc}>
+                    <Icon name="download" size={13} /> Exportar a Word (.doc)
+                  </button>
                   {onExpandPreview && (
                     <button className="dropdown-item" onClick={() => { onExpandPreview(); setHtmlMenu(false); }}>
                       <Icon name="eye" size={13} /> Vista previa ampliada
@@ -1604,6 +1707,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, se
                   onMove={onMove}
                   onReorder={onReorder}
                   onDuplicate={onDuplicate}
+                  onUngroup={onUngroup}
                   onOpenInnerPalette={onOpenInnerPalette}
                   onPickColumnAdd={onAddBlockToColumn}
                   appState={appState}
@@ -1747,6 +1851,19 @@ const CMDK_SCOPES = [
   { id: 'plantillas', label: 'Plantillas', groups: ['Plantillas'] },
   { id: 'compuestos', label: 'Compuestos', groups: ['Compuestos'] },
   { id: 'composiciones', label: 'Composiciones', groups: ['Composiciones'] },
+  { id: 'layout', label: 'Layout', groups: ['Layout'] },
+];
+
+// Layout items shown in the command palette so dividers and column sections
+// can be inserted from the inline "+" picker (not just the sidebar). The
+// onPick handler in app-main.jsx routes spec.type through addBlock(), which
+// already handles section_2col / section_3col / divider_*.
+const CMDK_LAYOUT_ITEMS = [
+  { type: 'section_2col',  id: 'layout-2col',         title: '2 columnas',       sub: 'Sección con dos columnas',          group: 'Layout', icon: '▥' },
+  { type: 'section_3col',  id: 'layout-3col',         title: '3 columnas',       sub: 'Sección con tres columnas',         group: 'Layout', icon: '▦' },
+  { type: 'divider_line',  id: 'layout-div-line',     title: 'Línea fina',       sub: 'Divisor sutil de ancho completo',   group: 'Layout', icon: '─' },
+  { type: 'divider_short', id: 'layout-div-short',    title: 'Línea corta',      sub: 'Divisor centrado breve',            group: 'Layout', icon: '⎯' },
+  { type: 'divider_dots',  id: 'layout-div-dots',     title: 'Puntos',           sub: 'Divisor de puntos elegante',        group: 'Layout', icon: '⋯' },
 ];
 
 function CommandPalette({ onClose, onPick, appState, currentUser }) {
@@ -1783,6 +1900,7 @@ function CommandPalette({ onClose, onPick, appState, currentUser }) {
     ...standalones
       .filter(b => !isHiddenForUser(currentUser, 'standaloneBlocks', b.id))
       .map(b => ({ type: b.type, id: b.id, title: b.title, sub: b.section || b.desc || '', group: 'Composiciones', icon: b.icon || '□', brand: b.brand })),
+    ...CMDK_LAYOUT_ITEMS,
   ];
 
   const counts = {};
@@ -1977,6 +2095,53 @@ function EmailPreviewModal({ html, lang, onClose }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     showToast('HTML descargado');
   };
+  // Word export — same approach as in Canvas: HTML wrapped with the Word/MSO
+  // namespaces, served as application/msword so the browser downloads it as
+  // a .doc that Word opens cleanly.
+  const handleDownloadDoc = () => {
+    const docHtml =
+      '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+      'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
+      'xmlns="http://www.w3.org/TR/REC-html40">' +
+      '<head><meta charset="utf-8"><title>Bomedia email</title>' +
+      '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View>' +
+      '<w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' +
+      '<style>body{font-family:Calibri,Arial,sans-serif;}@page{size:auto;margin:1.5cm;}</style>' +
+      '</head><body>' + (html || '') + '</body></html>';
+    const blob = new Blob(['﻿', docHtml], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bomedia-email-' + new Date().toISOString().slice(0, 10) + '.doc';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Documento Word descargado');
+  };
+  // PDF export — print dialog approach (no extra libs). User picks "Save as
+  // PDF" as the print destination.
+  const handleDownloadPdf = () => {
+    const printHtml =
+      '<!doctype html><html><head><meta charset="utf-8"><title>Bomedia email</title>' +
+      '<style>@page{size:A4;margin:12mm;}body{margin:0;}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style>' +
+      '</head><body>' + (html || '') + '</body></html>';
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(iframe);
+    const cleanup = () => { try { document.body.removeChild(iframe); } catch (_) {} };
+    iframe.onload = () => {
+      try {
+        const win = iframe.contentWindow;
+        win.focus();
+        setTimeout(() => {
+          try { win.print(); } catch (_) {}
+          setTimeout(cleanup, 1500);
+        }, 350);
+      } catch (e) { cleanup(); }
+    };
+    if ('srcdoc' in iframe) iframe.srcdoc = printHtml;
+    else { const doc = iframe.contentDocument || iframe.contentWindow?.document; if (doc) { doc.open(); doc.write(printHtml); doc.close(); } }
+    showToast('Abriendo diálogo de impresión · selecciona "Guardar como PDF"');
+  };
   const handleOpenTab = () => {
     const w = window.open('about:blank', '_blank');
     if (w) { w.document.write(html || ''); w.document.close(); }
@@ -2004,8 +2169,14 @@ function EmailPreviewModal({ html, lang, onClose }) {
             <button className="btn btn-ghost" onClick={handleCopy} style={{fontSize:12}}>
               <Icon name="copy" size={12} /> Copiar HTML
             </button>
-            <button className="btn btn-ghost" onClick={handleDownload} style={{fontSize:12}}>
-              <Icon name="download" size={12} /> Descargar
+            <button className="btn btn-ghost" onClick={handleDownload} style={{fontSize:12}} title="Descargar como .html">
+              <Icon name="download" size={12} /> HTML
+            </button>
+            <button className="btn btn-ghost" onClick={handleDownloadPdf} style={{fontSize:12}} title="Exportar como PDF (vía diálogo de impresión)">
+              <Icon name="download" size={12} /> PDF
+            </button>
+            <button className="btn btn-ghost" onClick={handleDownloadDoc} style={{fontSize:12}} title="Descargar como documento Word (.doc)">
+              <Icon name="download" size={12} /> Word
             </button>
             <button className="btn btn-ghost" onClick={handleOpenTab} style={{fontSize:12}}>
               <Icon name="share" size={12} /> Pestaña nueva

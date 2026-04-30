@@ -69,14 +69,25 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
       const list = prev[collection] || [];
       const i = list.findIndex(x => x.id === data.id);
       isNew = i < 0;
+      // Stamp createdBy on first save (non-admin). This lets the BO show a
+      // "Tuyo" / "Privado" badge so the creator can see at a glance which
+      // items are their own (and therefore hidden from other commercials by
+      // default). Admin-created items go visible to everyone — no stamp.
+      let stamped = data;
+      if (isNew && currentUser && currentUser.role !== 'admin' && !data.createdBy) {
+        stamped = Object.assign({}, data, { createdBy: currentUser.id, createdAt: Date.now() });
+      }
       const next = i >= 0
         ? list.map((x, idx) => idx === i ? Object.assign({}, x, data) : x)
-        : [...list, data];
+        : [...list, stamped];
       return Object.assign({}, prev, { [collection]: next });
     });
     // For non-user collections: if the current commercial user just created
     // the item, auto-hide it from other users so each operator owns their
-    // additions until they explicitly share them.
+    // additions until they explicitly share them. The visibility rule is
+    // universal across collections (templates, composed, standalone, cta,
+    // prewrittenTexts, products, brands) — anything a non-admin creates is
+    // private by default; other users opt in via the eye toggle on each card.
     if (isNew && collection !== 'users' && typeof autoHideForOthers === 'function') {
       setTimeout(() => autoHideForOthers(collection, data.id), 0);
     }
