@@ -103,6 +103,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   // assistant without admin intervention.
   const commercialNavItems = [
     { id: 'mytone', label: 'Mi tono IA', icon: 'sparkles' },
+    { id: 'myaccount', label: 'Mi cuenta', icon: 'lock' },
   ];
   const navItems = isAdmin ? [...baseNavItems, ...adminNavItems] : [...baseNavItems, ...commercialNavItems];
 
@@ -122,6 +123,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
     blocks: { title: 'Bloques sueltos', sub: 'Strips, heroes, vídeos y selectores de producto.' },
     composed: { title: 'Bloques compuestos', sub: 'Combos pre-montados (intro + productos + brand strip).' },
     ctas: { title: 'CTAs guardados', sub: 'Llamadas a la acción reutilizables (título + bullets + botón).' },
+    myaccount: { title: 'Mi cuenta', sub: 'Cambia tu contraseña y revisa tus datos básicos.' },
     users: { title: 'Usuarios', sub: 'Gestiona accesos y roles. Solo admin.' },
     ai: { title: 'Asistente de redacción', sub: 'API key y tono por idioma. Solo admin.' },
     settings: { title: 'Ajustes', sub: 'Sincronización, acceso y preferencias. Solo admin.' },
@@ -485,6 +487,10 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
 
         {tab === 'mytone' && currentUser && !isAdmin && (
           <MyToneIaPanel currentUser={currentUser} setAppState={setAppState} />
+        )}
+
+        {tab === 'myaccount' && currentUser && !isAdmin && (
+          <MyAccountPanel currentUser={currentUser} setAppState={setAppState} />
         )}
 
         {tab === 'ai' && <AISettingsPanel appState={appState} setAppState={setAppState} />}
@@ -1440,6 +1446,121 @@ function UserBOEdit({ data, setData }) {
 
 /* Per-user "Mi tono IA" panel — visible to commercial users so they can
    tune their own assistant prompts without needing admin to intervene. */
+/* "Mi cuenta" — self-service para que el comercial se cambie la
+   contraseña sin tener que pedírselo al admin. La validación contra el
+   hash actual evita que alguien que coge una pestaña abierta pueda
+   cambiar la password. */
+function MyAccountPanel({ currentUser, setAppState }) {
+  const [current, setCurrent] = React.useState('');
+  const [next, setNext] = React.useState('');
+  const [confirm, setConfirm] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState(null); // { kind:'ok'|'err', text }
+
+  const hasCurrentPw = !!(currentUser && currentUser.passwordHash);
+
+  const reset = () => { setCurrent(''); setNext(''); setConfirm(''); };
+
+  const submit = async () => {
+    setMsg(null);
+    if (next.length < 4) {
+      setMsg({ kind: 'err', text: 'La nueva contraseña debe tener al menos 4 caracteres.' });
+      return;
+    }
+    if (next !== confirm) {
+      setMsg({ kind: 'err', text: 'La nueva contraseña y la confirmación no coinciden.' });
+      return;
+    }
+    if (typeof window.sha256Hash !== 'function') {
+      setMsg({ kind: 'err', text: 'sha256Hash no disponible. Recarga la página.' });
+      return;
+    }
+    setBusy(true);
+    try {
+      // 1. Verifica la contraseña actual (si existe)
+      if (hasCurrentPw) {
+        const currHash = await window.sha256Hash(current);
+        if (currHash !== currentUser.passwordHash) {
+          setMsg({ kind: 'err', text: 'La contraseña actual no es correcta.' });
+          setBusy(false);
+          return;
+        }
+      }
+      // 2. Hashea la nueva y guárdala
+      const newHash = await window.sha256Hash(next);
+      setAppState(prev => {
+        const users = (prev.users || []).map(u =>
+          u.id === currentUser.id ? Object.assign({}, u, { passwordHash: newHash }) : u
+        );
+        return Object.assign({}, prev, { users });
+      });
+      reset();
+      setMsg({ kind: 'ok', text: 'Contraseña actualizada. La nueva se usará en el próximo login.' });
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Error: ' + (e.message || String(e)) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{maxWidth:560, display:'flex', flexDirection:'column', gap:14}}>
+      <div className="product-card" style={{padding:20}}>
+        <div style={{fontSize:14, fontWeight:600, marginBottom:4}}>Tus datos</div>
+        <div style={{fontSize:12, color:'var(--text-muted)', display:'grid', gridTemplateColumns:'80px 1fr', gap:'4px 12px', marginTop:10}}>
+          <span>Nombre</span><span style={{color:'var(--text)', fontWeight:500}}>{currentUser.name}</span>
+          <span>Rol</span><span style={{color:'var(--text)', fontFamily:'var(--font-mono)', fontSize:11}}>{currentUser.role}</span>
+          <span>ID</span><span style={{color:'var(--text)', fontFamily:'var(--font-mono)', fontSize:11}}>{currentUser.id}</span>
+        </div>
+      </div>
+
+      <div className="product-card" style={{padding:20}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
+          <Icon name="lock" size={16}/>
+          <div style={{fontSize:14, fontWeight:600}}>Cambiar contraseña</div>
+        </div>
+        <div style={{fontSize:11.5, color:'var(--text-muted)', marginBottom:14, lineHeight:1.55}}>
+          {hasCurrentPw
+            ? 'Introduce tu contraseña actual para confirmar tu identidad y luego la nueva.'
+            : 'No tienes contraseña configurada. Define una para poder iniciar sesión sin pedírselo a un admin.'}
+        </div>
+
+        <div style={{display:'flex', flexDirection:'column', gap:10}}>
+          {hasCurrentPw && (
+            <div className="field">
+              <label className="field-label">Contraseña actual</label>
+              <input className="input" type="password" value={current} onChange={e => setCurrent(e.target.value)} autoComplete="current-password" />
+            </div>
+          )}
+          <div className="field">
+            <label className="field-label">Nueva contraseña</label>
+            <input className="input" type="password" value={next} onChange={e => setNext(e.target.value)} autoComplete="new-password" />
+          </div>
+          <div className="field">
+            <label className="field-label">Confirmar nueva contraseña</label>
+            <input className="input" type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" />
+          </div>
+        </div>
+
+        <div style={{display:'flex', gap:8, alignItems:'center', marginTop:14}}>
+          <button className="btn btn-primary" disabled={busy || !next || !confirm || (hasCurrentPw && !current)} onClick={submit}>
+            {busy ? 'Guardando…' : 'Cambiar contraseña'}
+          </button>
+          {msg && (
+            <span style={{fontSize:12, color: msg.kind === 'err' ? 'var(--danger)' : 'var(--success)', fontWeight:500}}>
+              {msg.text}
+            </span>
+          )}
+        </div>
+
+        <div style={{marginTop:14, padding:'10px 12px', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', fontSize:11, color:'var(--text-muted)', lineHeight:1.55}}>
+          La contraseña se guarda como hash SHA-256 en Supabase, no en texto plano. Si la olvidas, pídele a un admin que la resetee desde Backoffice → Usuarios.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MyToneIaPanel({ currentUser, setAppState }) {
   const styles = (currentUser && currentUser.aiStyles) || {};
   const langLabels = { es:'Español', fr:'Français', de:'Deutsch', en:'English', nl:'Nederlands' };
@@ -2151,4 +2272,4 @@ function SettingsPanel({ appState, setAppState }) {
   );
 }
 
-Object.assign(window, { Backoffice, AISettingsPanel, AutoTranslatePanel, SettingsPanel, UsersPanel, UserBOEdit, AiStylesAdminOverview, MyToneIaPanel, ComposedBOEdit, CtaSavedBOEdit, ImageUploadInput, ImageLibraryModal, exportAppStateAsJson, blankItemForKind });
+Object.assign(window, { Backoffice, AISettingsPanel, AutoTranslatePanel, SettingsPanel, UsersPanel, UserBOEdit, AiStylesAdminOverview, MyToneIaPanel, MyAccountPanel, ComposedBOEdit, CtaSavedBOEdit, ImageUploadInput, ImageLibraryModal, exportAppStateAsJson, blankItemForKind });

@@ -183,6 +183,24 @@ function App() {
     saveDraftBlocks(blocks, currentUserId);
   }, [blocks, currentUserId]);
 
+  // ─── Email title (asunto) — visible/editable arriba del canvas, persistido
+  // por usuario en localStorage como los drafts.
+  const _emailTitleKey = (uid) => 'bomedia_email_title_' + (uid || 'anon');
+  const [emailTitle, setEmailTitle] = React.useState(() => {
+    try {
+      const initialUserId = sessionStorage.getItem('bomedia_session_user') || null;
+      return localStorage.getItem(_emailTitleKey(initialUserId)) || '';
+    } catch (e) { return ''; }
+  });
+  // Cargar el título del usuario activo cuando cambia el currentUserId
+  React.useEffect(() => {
+    try { setEmailTitle(localStorage.getItem(_emailTitleKey(currentUserId)) || ''); } catch (e) {}
+  }, [currentUserId]);
+  // Guardar el título cada vez que cambia
+  React.useEffect(() => {
+    try { localStorage.setItem(_emailTitleKey(currentUserId), emailTitle || ''); } catch (e) {}
+  }, [emailTitle, currentUserId]);
+
   // Expose setAppState globally so deeply-nested popovers (e.g. the image
   // library picker inside section columns) can record uploads without
   // threading the setter through every layer of props. Also expose the
@@ -474,6 +492,13 @@ function App() {
     setEditingTemplateId(tplId);
     setSelectedId(null);
     setMode('compositor');
+    // Auto-populate the email title with the template's name (in active
+    // language). The user can still rename it manually afterwards.
+    if (typeof window.getLocalizedText === 'function') {
+      setEmailTitle(window.getLocalizedText(tpl, 'name', lang) || tpl.name || '');
+    } else {
+      setEmailTitle(tpl.name || '');
+    }
   };
 
   // Save the current canvas into an existing template (overwrite its blocks).
@@ -507,6 +532,13 @@ function App() {
       templates: [...(prev.templates || []), tpl],
     }));
     setEditingTemplateId(id);
+    // Misma política que en el "+ Nuevo" del Backoffice: cuando un
+    // comercial crea contenido nuevo, lo ocultamos del resto de
+    // comerciales por defecto. El admin lo puede ver de todas formas
+    // y los demás pueden hacerlo visible para sí mismos desde BO.
+    if (currentUser && currentUser.role !== 'admin') {
+      setTimeout(() => autoHideForOthers('templates', id), 0);
+    }
     return tpl;
   };
   // When the user clicks the "+" insert-zone between two blocks the canvas
@@ -541,6 +573,19 @@ function App() {
     if (spec.templateId) {
       const exp = expandTemplate(spec.templateId);
       setBlocks(prev => placeBlocks(prev, exp.map(e => ({ ...e, id: mkId() }))));
+      // Si el canvas estaba vacío (carga "fresh" de plantilla, no append),
+      // autocompletamos el título con el nombre de la plantilla en el
+      // idioma activo. No machacamos un título que el user ya hubiera
+      // escrito.
+      if (blocks.length === 0 && !emailTitle) {
+        const tpl = (appState.templates || []).find(t => t.id === spec.templateId);
+        if (tpl) {
+          const tplName = (typeof window.getLocalizedText === 'function')
+            ? window.getLocalizedText(tpl, 'name', lang) || tpl.name
+            : tpl.name;
+          setEmailTitle(tplName || '');
+        }
+      }
       setInsertAfter(null);
       setInnerTarget(null);
       return;
@@ -896,9 +941,16 @@ function App() {
   };
 
   // Generate the live email HTML once per render; Preview consumes it.
+  // Includes UTM tracking on every external link so opens/clicks can be
+  // attributed to the campaign + commercial in GA/Plausible/etc.
+  // utm_source=email, utm_medium=bomedia, utm_campaign=YYYYMMDD-brand-lang-title,
+  // utm_term=lang, utm_content=<commercial-id>.
   const emailHtml = React.useMemo(() => {
+    if (typeof renderEmailHtmlWithTracking === 'function') {
+      return renderEmailHtmlWithTracking(blocks, appState, lang, emailTitle, currentUser).html;
+    }
     return renderEmailHtml(blocks, appState, lang);
-  }, [blocks, appState, lang]);
+  }, [blocks, appState, lang, emailTitle, currentUser]);
 
   const blockCount = blocks.length;
   const syncLabel = syncStatus === 'loading' ? 'Cargando…'
@@ -948,7 +1000,9 @@ function App() {
               <button className={'icon-btn' + (previewHidden ? '' : ' active')} onClick={() => setPreviewHidden(v => !v)} title="Preview">
                 <Icon name="eye" size={16} />
               </button>
-              <button className="icon-btn" title="Copiar HTML — pégalo en Gmail/Outlook con formato" onClick={() => {
+              <button className="icon-btn" title="Copiar HTML — pégalo en Gmail/Outlook con formato (con UTM tracking)" onClick={() => {
+                // emailHtml ya incluye UTM tracking (utm_source/medium/
+                // campaign/term/content) inyectado en useMemo arriba.
                 if (typeof copyHtmlAsRich === 'function') copyHtmlAsRich(emailHtml);
                 else navigator.clipboard.writeText(emailHtml).catch(() => {});
               }}>
@@ -1021,6 +1075,8 @@ function App() {
             appState={appState}
             onSetBlocks={setBlocks}
             onSetLang={setLang}
+            emailTitle={emailTitle}
+            onEmailTitleChange={setEmailTitle}
           />
           {!previewHidden && (
             <div className="right-panel" style={{display:'flex', flexDirection:'column', minHeight:0, background:'var(--bg-sunken)', borderLeft:'1px solid var(--border)'}}>

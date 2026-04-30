@@ -663,9 +663,94 @@ function renderEmailHtml(v3Blocks, appState, lang) {
   return generateFullHtml(v2Blocks, (appState && appState.products) || [], lang || 'es', (appState && appState.brands) || [], appState)
 }
 
+/* ───────────── UTM TRACKING ─────────────
+   Portado de v2: cada vez que se copia/exporta el HTML, todos los <a> que
+   apunten a páginas externas reciben query params utm_* para que el
+   destino (Google Analytics, Plausible, Matomo, lo que sea) pueda
+   atribuir la visita al email.
+
+   - utm_source=email  (canal)
+   - utm_medium=bomedia (plataforma)
+   - utm_campaign=<id de campaña>  (autogenerado yyyymmdd-marca-idioma)
+   - utm_term=<idioma>  (es/fr/de/en/nl)
+   Se omite mailto:/tel:/#anchor que no son URL trackeables. */
+
+function detectCampaignBrand(v3Blocks, appState) {
+  const brandCounts = {}
+  const products = (appState && appState.products) || []
+  const inc = (b) => { if (!b) return; brandCounts[b] = (brandCounts[b] || 0) + 1 }
+  ;(v3Blocks || []).forEach(b => {
+    if (!b) return
+    if (b.brand) inc(b.brand)
+    if (b.type && b.type.startsWith && b.type.startsWith('brand_')) inc(b.type.replace('brand_', ''))
+    if (b.product1) { const p = products.find(x => x.id === b.product1); if (p) inc(p.brand) }
+    if (b.product2) { const p = products.find(x => x.id === b.product2); if (p) inc(p.brand) }
+    if (b.product3) { const p = products.find(x => x.id === b.product3); if (p) inc(p.brand) }
+    if (b.productId) { const p = products.find(x => x.id === b.productId); if (p) inc(p.brand) }
+  })
+  let top = 'mix', max = 0
+  for (const k in brandCounts) { if (brandCounts[k] > max) { max = brandCounts[k]; top = k } }
+  return top
+}
+
+function generateCampaignName(v3Blocks, lang, appState, customTitle) {
+  const now = new Date()
+  const yy = String(now.getFullYear())
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const brand = detectCampaignBrand(v3Blocks, appState)
+  // Si el user ha dado un título al email, lo metemos slugificado para que
+  // sea reconocible en GA. Si no, solo fecha-marca-idioma.
+  const slug = customTitle
+    ? '-' + String(customTitle).toLowerCase()
+        .replace(/[áàäâ]/g, 'a').replace(/[éèëê]/g, 'e').replace(/[íìïî]/g, 'i')
+        .replace(/[óòöô]/g, 'o').replace(/[úùüû]/g, 'u').replace(/[ñ]/g, 'n')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+    : ''
+  return yy + mm + dd + '-' + brand + '-' + (lang || 'es') + slug
+}
+
+/* Slugifica un nombre/id de usuario para que sea seguro en una URL. */
+function _slugifyUser(s) {
+  if (!s) return ''
+  return String(s).toLowerCase()
+    .replace(/[áàäâ]/g, 'a').replace(/[éèëê]/g, 'e').replace(/[íìïî]/g, 'i')
+    .replace(/[óòöô]/g, 'o').replace(/[úùüû]/g, 'u').replace(/[ñ]/g, 'n')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
+}
+
+function addUtmParams(html, campaign, lang, userSlug) {
+  if (!html) return ''
+  let utmBase = 'utm_source=email&utm_medium=bomedia&utm_campaign=' + encodeURIComponent(campaign) +
+    '&utm_term=' + encodeURIComponent(lang || 'es')
+  // utm_content lleva el comercial que envía — permite atribuir aperturas
+  // y clicks al usuario que copió el HTML. En GA aparece como dimension
+  // "Ad Content" o "Content".
+  if (userSlug) utmBase += '&utm_content=' + encodeURIComponent(userSlug)
+  return html.replace(/<a\s([^>]*?)href="([^"]+)"([^>]*?)>/gi, function(match, pre, url, post) {
+    // Saltar mailto:, tel:, javascript:, data: y anchors sin destino real
+    if (/^(mailto:|tel:|javascript:|data:|#)/i.test(url)) return match
+    // Si el href ya tiene utm_*, no duplicar
+    if (/[?&]utm_(source|campaign|medium|term|content)=/i.test(url)) return match
+    const separator = url.indexOf('?') >= 0 ? '&' : '?'
+    return '<a ' + pre + 'href="' + url + separator + utmBase + '"' + post + '>'
+  })
+}
+
+/* Composición conveniente: render + UTM en una sola llamada. Lo llaman
+   los botones "Copiar HTML" y "Enviar". `currentUser` es opcional — si se
+   pasa, su id (o nombre) va en utm_content. */
+function renderEmailHtmlWithTracking(v3Blocks, appState, lang, customTitle, currentUser) {
+  const html = renderEmailHtml(v3Blocks, appState, lang)
+  const campaign = generateCampaignName(v3Blocks, lang, appState, customTitle)
+  const userSlug = currentUser ? _slugifyUser(currentUser.id || currentUser.name) : ''
+  return { html: addUtmParams(html, campaign, lang, userSlug), campaign, userSlug }
+}
+
 Object.assign(window, {
   CSS_BLOCK, escapeHtml,
   productCardHtml, productCardCompactHtml, productSingleHtml, productPairHtml, productTrioHtml,
   brandStripHtml, textBlockHtml, freebirdHtml, pimpamHeroHtml, pimpamStepsHtml,
   generateFullHtml, v3BlocksToV2Blocks, renderEmailHtml,
+  addUtmParams, generateCampaignName, detectCampaignBrand, renderEmailHtmlWithTracking,
 })

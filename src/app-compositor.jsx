@@ -1302,7 +1302,7 @@ function ColumnAddPicker({ onPick, columnLabel, appState }) {
   );
 }
 
-function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, selectedId, setSelectedId, onOpenPalette, onOpenInnerPalette, onAddBlock, onAddBlockToColumn, onClearBlocks, onExpandPreview, editingTemplate, onExitTemplateEdit, onSaveCurrentTemplate, onSaveAsTemplate, lang, variant, emailHtml, onUndo, onRedo, appState, onSetBlocks, onSetLang }) {
+function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, selectedId, setSelectedId, onOpenPalette, onOpenInnerPalette, onAddBlock, onAddBlockToColumn, onClearBlocks, onExpandPreview, editingTemplate, onExitTemplateEdit, onSaveCurrentTemplate, onSaveAsTemplate, lang, variant, emailHtml, onUndo, onRedo, appState, onSetBlocks, onSetLang, emailTitle, onEmailTitleChange }) {
   // AI Agent modal state — opens when user clicks the "✨ IA" button.
   const [agentOpen, setAgentOpen] = React.useState(false);
   const liveTemplates = (typeof window !== 'undefined' && window.TEMPLATES) || TEMPLATES || [];
@@ -1396,13 +1396,13 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, se
         )}
         <div className="canvas-header">
           <div>
-            {variant === 'serif' ? (
-              <h1 className="canvas-title">
-                {inTplMode ? <span style={{fontStyle:'italic'}}>{editingTemplate.name}</span> : <>Email <span style={{fontStyle:'italic'}}>sin título</span></>}
-              </h1>
-            ) : (
-              <h1 className="canvas-title-plain">{inTplMode ? editingTemplate.name : 'Email sin título'}</h1>
-            )}
+            <EditableEmailTitle
+              value={inTplMode ? editingTemplate.name : (emailTitle || '')}
+              onChange={onEmailTitleChange}
+              variant={variant}
+              readOnly={inTplMode}
+              placeholder="Email sin título"
+            />
             <div className="canvas-meta" style={{marginTop:6}}>
               <span className="sync-ok">●</span>
               <span>{inTplMode ? 'Plantilla' : 'Sincronizado'}</span>
@@ -1957,6 +1957,78 @@ function EmailPreviewModal({ html, lang, onClose }) {
   );
 }
 
+/* Editable canvas title — the user clicks the "Email sin título" line and
+   types the actual subject of the email. Persists per user. When editing
+   a template, falls back to the template's name (read-only). The styling
+   matches the variant ('serif' or default) and reuses the existing CSS
+   classes so it looks identical to the static h1 it replaces. */
+function EditableEmailTitle({ value, onChange, variant, readOnly, placeholder }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(value || '');
+  const inputRef = React.useRef(null);
+  React.useEffect(() => { setDraft(value || ''); }, [value]);
+  React.useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const v = (draft || '').trim();
+    if (v !== (value || '').trim() && typeof onChange === 'function') onChange(v);
+  };
+  const cancel = () => {
+    setEditing(false);
+    setDraft(value || '');
+  };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  };
+
+  if (readOnly) {
+    return variant === 'serif'
+      ? <h1 className="canvas-title"><span style={{fontStyle:'italic'}}>{value}</span></h1>
+      : <h1 className="canvas-title-plain">{value}</h1>;
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className={variant === 'serif' ? 'canvas-title' : 'canvas-title-plain'}
+        style={{background:'transparent', border:'none', outline:'2px solid var(--accent)', outlineOffset:4, borderRadius:4, width:'100%', maxWidth:'100%', display:'block', font:'inherit', padding:'2px 4px'}}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={onKey}
+        placeholder={placeholder}
+        maxLength={120}
+      />
+    );
+  }
+
+  const display = (value || '').trim();
+  const showPlaceholder = !display;
+  const titleClass = variant === 'serif' ? 'canvas-title' : 'canvas-title-plain';
+  return (
+    <h1
+      className={titleClass}
+      onClick={() => setEditing(true)}
+      style={{cursor:'text', color: showPlaceholder ? 'var(--text-subtle)' : undefined}}
+      title="Clic para nombrar este email"
+    >
+      {showPlaceholder
+        ? (variant === 'serif'
+            ? <>Email <span style={{fontStyle:'italic'}}>sin título</span></>
+            : (placeholder || 'Email sin título'))
+        : (variant === 'serif' ? <span style={{fontStyle:'italic'}}>{display}</span> : display)}
+    </h1>
+  );
+}
+
 /* Modal that drives the AI agent. The user types a prompt in natural
    language; the agent runs through OpenAI tool-use, mutating a working
    copy of the canvas. We render a live log of steps (thinking → tool
@@ -2130,4 +2202,4 @@ function AiAgentModal({ blocks, lang, appState, onClose, onCommit }) {
   );
 }
 
-Object.assign(window, { Sidebar, Canvas, PreviewPanel, CommandPalette, EmailIframe, MiniProduct, BrandStripPreview, EmailPreviewModal, SaveAsTemplateModal, AiAgentModal });
+Object.assign(window, { Sidebar, Canvas, PreviewPanel, CommandPalette, EmailIframe, MiniProduct, BrandStripPreview, EmailPreviewModal, SaveAsTemplateModal, AiAgentModal, EditableEmailTitle });
