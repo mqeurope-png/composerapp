@@ -91,6 +91,10 @@ function App() {
       // Repara i18n.{lang}.link en productos que se han "perdido"
       // (igualados al base) o que faltan. Idempotente.
       if (typeof repairProductLinks === 'function') Object.assign(stored, repairProductLinks(stored));
+      // Migra los bloques compuestos legacy (introText + brandStrip + ...)
+      // a la nueva forma `compositorBlocks` (lista plana de bloques v3).
+      // Idempotente — si ya hay compositorBlocks no toca nada.
+      if (typeof migrateComposedToCompositorBlocks === 'function') Object.assign(stored, migrateComposedToCompositorBlocks(stored));
       if (!stored.standaloneBlocks) stored.standaloneBlocks = defaults.standaloneBlocks;
       if (!stored.templates) stored.templates = defaults.templates;
       // Backwards-compat: if there's no users[] yet, create a single admin
@@ -317,6 +321,7 @@ function App() {
         // — re-running it on already-migrated data is a no-op.
         cloudData = migrateMboDtf(cloudData);
         if (typeof repairProductLinks === 'function') cloudData = repairProductLinks(cloudData);
+        if (typeof migrateComposedToCompositorBlocks === 'function') cloudData = migrateComposedToCompositorBlocks(cloudData);
         if (!cloudData.standaloneBlocks) cloudData.standaloneBlocks = defaults.standaloneBlocks;
         if (!cloudData.templates) cloudData.templates = defaults.templates;
         // Multi-user migration: pre-existing Supabase rows have no users[].
@@ -822,10 +827,8 @@ function App() {
   // editable canvas blocks. The composed block's `i18n.{lang}.introText` is
   // copied into the new text block's `overridesByLang` so translations survive.
   const ungroupComposedBlock = (id) => {
-    const cb = (appState.composedBlocks || []).find(c => c.id === id);
-    // Note: the canvas may store `composedId` referencing the source — find
-    // the actual block in the canvas (top-level or inside a section column)
-    // and use its composedId to look up the source.
+    // Find the actual composed block instance in the canvas (top-level OR
+    // inside a section column) so we can resolve its source via composedId.
     const findCanvasBlock = (list) => {
       for (const x of list) {
         if (x.id === id) return x;
@@ -846,56 +849,44 @@ function App() {
 
     // Build child blocks from the source.
     const children = [];
-    // 1. Intro text (with i18n)
-    if (source.introText) {
-      const overridesByLang = { es: source.introText };
-      if (source.i18n) {
-        for (const [l, v] of Object.entries(source.i18n)) {
-          if (v && v.introText) overridesByLang[l] = v.introText;
-        }
+
+    // Preferred path: source.compositorBlocks is the new flat list of v3
+    // blocks. Just clone each child and assign a fresh canvas id. Already
+    // contains text/brand_strip/products/image/cta/divider/video etc.
+    if (Array.isArray(source.compositorBlocks) && source.compositorBlocks.length > 0) {
+      for (const c of source.compositorBlocks) {
+        if (!c || !c.type) continue;
+        children.push(Object.assign({}, c, { id: mkId() }));
       }
-      children.push({ id: mkId(), type: 'text', overridesByLang });
-    }
-    // 2. Brand strip
-    if (source.brandStrip && source.brandStrip !== 'none') {
-      children.push({ id: mkId(), type: 'brand_strip', brand: source.brandStrip });
-    }
-    // 3. Products — respect blockType (single/pair/trio)
-    const prods = source.products || [];
-    if (source.blockType === 'product_trio' && prods.length >= 3) {
-      children.push({ id: mkId(), type: 'product_trio', product1: prods[0], product2: prods[1], product3: prods[2] });
-    } else if (source.blockType === 'product_pair' && prods.length >= 2) {
-      children.push({ id: mkId(), type: 'product_pair', product1: prods[0], product2: prods[1] });
-    } else if (source.blockType === 'product_single' && prods.length >= 1) {
-      children.push({ id: mkId(), type: 'product_single', product1: prods[0] });
     } else {
-      for (const pid of prods) children.push({ id: mkId(), type: 'product_single', product1: pid });
-    }
-    // 4. Hero / steps — link to the first matching standalone (same logic as
-    // email-gen + expandTemplate)
-    if (source.includeHero) {
-      const heroSb = (appState.standaloneBlocks || []).find(s => s.blockType === 'pimpam_hero');
-      if (heroSb) {
-        children.push({
-          id: mkId(),
-          type: 'pimpam_hero',
-          standaloneId: heroSb.id,
-          _sourceType: 'standalone',
-          _sourceId: heroSb.id,
-        });
+      // Legacy path: derive from introText + brandStrip + blockType + products.
+      // Same expansion email-gen used to do for legacy composed blocks.
+      if (source.introText) {
+        const overridesByLang = { es: source.introText };
+        if (source.i18n) {
+          for (const [l, v] of Object.entries(source.i18n)) {
+            if (v && v.introText) overridesByLang[l] = v.introText;
+          }
+        }
+        children.push({ id: mkId(), type: 'text', overridesByLang });
       }
-    }
-    if (source.includeSteps) {
-      const stepsSb = (appState.standaloneBlocks || []).find(s => s.blockType === 'pimpam_steps');
-      if (stepsSb) {
-        children.push({
-          id: mkId(),
-          type: 'pimpam_steps',
-          standaloneId: stepsSb.id,
-          _sourceType: 'standalone',
-          _sourceId: stepsSb.id,
-        });
+      if (source.brandStrip && source.brandStrip !== 'none') {
+        children.push({ id: mkId(), type: 'brand_strip', brand: source.brandStrip });
       }
+      const prods = source.products || [];
+      if (source.blockType === 'product_trio' && prods.length >= 3) {
+        children.push({ id: mkId(), type: 'product_trio', product1: prods[0], product2: prods[1], product3: prods[2] });
+      } else if (source.blockType === 'product_pair' && prods.length >= 2) {
+        children.push({ id: mkId(), type: 'product_pair', product1: prods[0], product2: prods[1] });
+      } else if (source.blockType === 'product_single' && prods.length >= 1) {
+        children.push({ id: mkId(), type: 'product_single', product1: prods[0] });
+      } else {
+        for (const pid of prods) children.push({ id: mkId(), type: 'product_single', product1: pid });
+      }
+      // includeHero / includeSteps son legacy y se han desactivado en v5 —
+      // los heros/pasos ahora se añaden manualmente como bloques sueltos.
+      // No los desplegamos aquí para evitar que aparezca un hero genérico
+      // que el usuario no eligió explícitamente.
     }
     if (children.length === 0) return;
 

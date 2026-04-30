@@ -19,7 +19,10 @@ function blankItemForKind(kind) {
     case 'standalone':
       return { id: _newBoId('sb'), title: 'Bloque nuevo', desc: '', icon: '🧩', iconBg: '#e5e7eb', brand: 'mix', section: 'otros', blockType: 'product_single', config: { defaultProduct: '' }, visible: true, i18n: {} };
     case 'composed':
-      return { id: _newBoId('cb'), title: 'Compuesto nuevo', desc: '', priceRange: '', colorTag: 'gray', introText: '', brandStrip: 'none', blockType: 'product_pair', products: ['',''], includeHero: false, includeSteps: false, visible: true, i18n: {} };
+      // v5: el compuesto ahora se modela como `compositorBlocks` (lista de
+      // bloques v3 idéntica a la de las plantillas). Los campos legacy se
+      // mantienen vacíos para compat hacia atrás con datos antiguos.
+      return { id: _newBoId('cb'), title: 'Compuesto nuevo', desc: '', priceRange: '', colorTag: 'gray', brand: 'mix', compositorBlocks: [], visible: true, i18n: {} };
     case 'cta':
       return { id: _newBoId('cta'), name: 'CTA nuevo', title: '', subtitle: '', bullets: [], text: 'Más información', url: '', bg: '#1d4ed8', color: '#ffffff', align: 'center', panelBg: 'transparent', panelBorder: 'transparent', visible: true };
     case 'user':
@@ -1077,10 +1080,13 @@ function TemplateBOEdit({ data, setData }) {
   );
 }
 
-/* Editor for composedBlocks — pre-built combos like "intro + 2 productos +
-   brand strip". Title/desc/introText are localized; price range is a free
-   string per item; products[] is a small list of product ids that depend on
-   the chosen blockType (single = 1, pair = 2, trio = 3). */
+/* Editor for composedBlocks — desde v5 los compuestos son una agrupación
+   ordenada de bloques v3 individuales (idéntica forma a la de las
+   plantillas). Aquí se editan como una "mini-canvas": metadata arriba
+   (título / descripción / marca / color tag) y debajo una lista de
+   bloques que se pueden añadir, reordenar, editar y eliminar uno a uno.
+   Los heroes/pasos pre-existentes han desaparecido como checkboxes
+   especiales — si quieres uno, lo añades como un bloque más. */
 function ComposedBOEdit({ data, setData, lang }) {
   const set = (k, v) => setData({...data, [k]: v});
   const trVal = (field) => {
@@ -1095,25 +1101,41 @@ function ComposedBOEdit({ data, setData, lang }) {
   };
   const placeholder = (field) => (lang === 'es' || !data[field]) ? '' : data[field];
 
-  // The number of product slots depends on the selected blockType
-  const slotCount = data.blockType === 'product_trio' ? 3 : data.blockType === 'product_single' ? 1 : 2;
-  const products = Array.isArray(data.products) ? data.products : [];
-  const setSlot = (i, value) => {
-    const next = products.slice();
-    next[i] = value;
-    set('products', next.slice(0, slotCount));
-  };
-  React.useEffect(() => {
-    // Trim/pad the products array to match the slot count whenever blockType changes
-    if (products.length !== slotCount) {
-      const padded = products.slice(0, slotCount);
-      while (padded.length < slotCount) padded.push('');
-      set('products', padded);
-    }
-  }, [data.blockType]);
-
-  const allProducts = (typeof window !== 'undefined' && window.PRODUCTS) || PRODUCTS || [];
   const allBrands = (typeof window !== 'undefined' && window.BRANDS) || BRANDS || [];
+  const compBlocks = Array.isArray(data.compositorBlocks) ? data.compositorBlocks : [];
+
+  const setCompBlocks = (next) => set('compositorBlocks', next);
+  const updateChild = (idx, patch) => {
+    const next = compBlocks.map((b, i) => i === idx ? Object.assign({}, b, patch) : b);
+    setCompBlocks(next);
+  };
+  const removeChild = (idx) => {
+    setCompBlocks(compBlocks.filter((_, i) => i !== idx));
+  };
+  const moveChild = (idx, dir) => {
+    const j = idx + dir;
+    if (j < 0 || j >= compBlocks.length) return;
+    const next = compBlocks.slice();
+    [next[idx], next[j]] = [next[j], next[idx]];
+    setCompBlocks(next);
+  };
+  const addChild = (kind) => {
+    const factory = {
+      text: () => ({ type: 'text', overridesByLang: { es: '' } }),
+      brand_strip: () => ({ type: 'brand_strip', brand: 'mbo' }),
+      product_single: () => ({ type: 'product_single', product1: '' }),
+      product_pair: () => ({ type: 'product_pair', product1: '', product2: '' }),
+      product_trio: () => ({ type: 'product_trio', product1: '', product2: '', product3: '' }),
+      image: () => ({ type: 'image', src: '', alt: '', align: 'center', widthPct: 100 }),
+      divider_line: () => ({ type: 'divider_line' }),
+      divider_short: () => ({ type: 'divider_short' }),
+      divider_dots: () => ({ type: 'divider_dots' }),
+      video: () => ({ type: 'video', youtubeUrl: '' }),
+    };
+    const f = factory[kind];
+    if (!f) return;
+    setCompBlocks([...compBlocks, f()]);
+  };
 
   return (
     <>
@@ -1125,47 +1147,18 @@ function ComposedBOEdit({ data, setData, lang }) {
         <label className="field-label">Descripción corta ({lang.toUpperCase()})</label>
         <input className="input" value={trVal('desc')} placeholder={placeholder('desc')} onChange={e => setTr('desc', e.target.value)} />
       </div>
-      <div className="field">
-        <label className="field-label">Texto introductorio ({lang.toUpperCase()})</label>
-        <textarea className="textarea" rows={5} value={trVal('introText')} placeholder={placeholder('introText')} onChange={e => setTr('introText', e.target.value)} />
-      </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12}}>
         <div className="field">
-          <label className="field-label">Tipo de bloque <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
-          <select className="select" value={data.blockType || 'product_pair'} onChange={e => set('blockType', e.target.value)}>
-            <option value="product_single">1 producto</option>
-            <option value="product_pair">2 productos</option>
-            <option value="product_trio">3 productos</option>
-          </select>
-        </div>
-        <div className="field">
-          <label className="field-label">Strip de marca <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
-          <select className="select" value={data.brandStrip || 'none'} onChange={e => set('brandStrip', e.target.value)}>
-            <option value="none">Sin strip</option>
+          <label className="field-label">Marca <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
+          <select className="select" value={data.brand || 'mix'} onChange={e => set('brand', e.target.value)}>
+            <option value="mix">Mixto</option>
             {allBrands.filter(b => b.id !== 'bomedia').map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
           </select>
         </div>
-      </div>
-
-      <div className="field">
-        <label className="field-label">Productos · {slotCount}</label>
-        <div style={{display:'flex', flexDirection:'column', gap:6}}>
-          {Array.from({length: slotCount}).map((_, i) => (
-            <select key={i} className="select" value={products[i] || ''} onChange={e => setSlot(i, e.target.value)}>
-              <option value="">— Slot {i+1} —</option>
-              {allProducts.filter(p => p.visible !== false).map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.brand})</option>
-              ))}
-            </select>
-          ))}
-        </div>
-      </div>
-
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
         <div className="field">
           <label className="field-label">Rango de precio <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
-          <input className="input" value={data.priceRange || ''} placeholder="ej. 9.300 € + 13.900 €" onChange={e => set('priceRange', e.target.value)} />
+          <input className="input" value={data.priceRange || ''} placeholder="ej. 9.300 €" onChange={e => set('priceRange', e.target.value)} />
         </div>
         <div className="field">
           <label className="field-label">Color tag <span style={{fontSize:10, color:'var(--text-subtle)', fontWeight:400}}>(común)</span></label>
@@ -1179,17 +1172,192 @@ function ComposedBOEdit({ data, setData, lang }) {
         </div>
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-        <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer'}}>
-          <input type="checkbox" checked={!!data.includeHero} onChange={e => set('includeHero', e.target.checked)} />
-          <span>Incluye hero</span>
-        </label>
-        <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12, cursor:'pointer'}}>
-          <input type="checkbox" checked={!!data.includeSteps} onChange={e => set('includeSteps', e.target.checked)} />
-          <span>Incluye pasos (PimPam)</span>
-        </label>
+      <div className="field">
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+          <label className="field-label" style={{margin:0}}>Bloques que componen esta agrupación · {compBlocks.length}</label>
+        </div>
+        <div style={{
+          display:'flex', flexDirection:'column', gap:8,
+          border:'1px dashed var(--border-strong)', borderRadius:'var(--r-md)',
+          padding:10, background:'var(--bg-sunken)',
+        }}>
+          {compBlocks.length === 0 && (
+            <div style={{padding:18, textAlign:'center', color:'var(--text-subtle)', fontSize:12}}>
+              Sin bloques. Añade el primero abajo — texto, productos, marca, imagen, divisor, vídeo…
+            </div>
+          )}
+          {compBlocks.map((b, i) => (
+            <ComposedChildEditor
+              key={i}
+              block={b}
+              index={i}
+              total={compBlocks.length}
+              lang={lang}
+              onUpdate={(patch) => updateChild(i, patch)}
+              onRemove={() => removeChild(i)}
+              onMove={(dir) => moveChild(i, dir)}
+            />
+          ))}
+        </div>
+        <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
+          <span style={{fontSize:11, color:'var(--text-muted)', alignSelf:'center', marginRight:4}}>Añadir:</span>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('text')}><Icon name="text" size={11}/> Texto</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('brand_strip')}><Icon name="palette" size={11}/> Strip de marca</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_single')}><Icon name="box" size={11}/> 1 producto</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_pair')}><Icon name="box" size={11}/> 2 productos</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('product_trio')}><Icon name="box" size={11}/> 3 productos</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('image')}><Icon name="copy" size={11}/> Imagen</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('divider_line')}>— Divisor</button>
+          <button className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}} onClick={() => addChild('video')}><Icon name="zap" size={11}/> Vídeo</button>
+        </div>
       </div>
     </>
+  );
+}
+
+/* Mini-editor inline para un bloque hijo dentro de un compuesto. Solo
+   muestra los campos esenciales para cada tipo. La barra superior trae
+   etiqueta, mover arriba/abajo y eliminar; debajo el formulario. */
+function ComposedChildEditor({ block, index, total, lang, onUpdate, onRemove, onMove }) {
+  const allProducts = (typeof window !== 'undefined' && window.PRODUCTS) || PRODUCTS || [];
+  const allBrands = (typeof window !== 'undefined' && window.BRANDS) || BRANDS || [];
+  const typeLabel = {
+    text: 'Texto',
+    brand_strip: 'Strip de marca',
+    product_single: '1 producto',
+    product_pair: '2 productos',
+    product_trio: '3 productos',
+    image: 'Imagen',
+    divider_line: 'Divisor · línea',
+    divider_short: 'Divisor · línea corta',
+    divider_dots: 'Divisor · puntos',
+    video: 'Vídeo',
+    freebird: 'Vídeo',
+    pimpam_hero: 'Hero',
+    pimpam_steps: 'Pasos',
+    cta: 'CTA',
+  }[block.type] || block.type;
+
+  const visibleProducts = allProducts.filter(p => p.visible !== false);
+  const productOpts = (
+    <>
+      <option value="">— Selecciona —</option>
+      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.brand})</option>)}
+    </>
+  );
+
+  // Para 'text' usamos overridesByLang (mismo formato que el resto del v3).
+  // Si el bloque viene en formato legacy con `text` + `i18n`, lo migramos
+  // de vuelta al formato moderno cuando el user edita.
+  const textValue = (() => {
+    if (block.overridesByLang && block.overridesByLang[lang] != null) return block.overridesByLang[lang];
+    if (lang !== 'es' && block.i18n && block.i18n[lang] && block.i18n[lang].text != null) return block.i18n[lang].text;
+    if (lang === 'es') return block.text || '';
+    return '';
+  })();
+  const setTextValue = (v) => {
+    const overridesByLang = Object.assign({}, block.overridesByLang || {});
+    if (lang === 'es') {
+      overridesByLang.es = v;
+    } else {
+      overridesByLang.es = overridesByLang.es != null ? overridesByLang.es : (block.text || '');
+      overridesByLang[lang] = v;
+    }
+    onUpdate({ overridesByLang, text: undefined, i18n: undefined });
+  };
+
+  return (
+    <div style={{
+      background:'var(--bg-panel)', border:'1px solid var(--border)',
+      borderRadius:'var(--r-sm)', padding:10,
+    }}>
+      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
+        <span style={{
+          fontSize:10, fontFamily:'var(--font-mono)', textTransform:'uppercase',
+          letterSpacing:1, color:'var(--text-muted)', padding:'2px 8px',
+          background:'var(--bg-sunken)', borderRadius:4,
+        }}>
+          {index + 1} · {typeLabel}
+        </span>
+        <div style={{flex:1}}/>
+        <button className="icon-btn" disabled={index === 0} onClick={() => onMove(-1)} title="Subir"><Icon name="arrowUp" size={11}/></button>
+        <button className="icon-btn" disabled={index === total - 1} onClick={() => onMove(1)} title="Bajar"><Icon name="arrowDown" size={11}/></button>
+        <button className="icon-btn" onClick={onRemove} title="Eliminar bloque"><Icon name="trash" size={11}/></button>
+      </div>
+
+      {block.type === 'text' && (
+        <textarea
+          className="textarea" rows={3}
+          value={textValue}
+          placeholder={lang === 'es' ? 'Escribe el texto…' : '(traducción ' + lang.toUpperCase() + ')'}
+          onChange={e => setTextValue(e.target.value)}
+          style={{fontSize:12}}
+        />
+      )}
+
+      {block.type === 'brand_strip' && (
+        <select className="select" value={block.brand || 'mbo'} onChange={e => onUpdate({ brand: e.target.value })}>
+          {allBrands.filter(b => b.id !== 'bomedia').map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+        </select>
+      )}
+
+      {block.type === 'product_single' && (
+        <select className="select" value={block.product1 || ''} onChange={e => onUpdate({ product1: e.target.value })}>
+          {productOpts}
+        </select>
+      )}
+
+      {block.type === 'product_pair' && (
+        <div style={{display:'flex', flexDirection:'column', gap:4}}>
+          <select className="select" value={block.product1 || ''} onChange={e => onUpdate({ product1: e.target.value })}>{productOpts}</select>
+          <select className="select" value={block.product2 || ''} onChange={e => onUpdate({ product2: e.target.value })}>{productOpts}</select>
+        </div>
+      )}
+
+      {block.type === 'product_trio' && (
+        <div style={{display:'flex', flexDirection:'column', gap:4}}>
+          <select className="select" value={block.product1 || ''} onChange={e => onUpdate({ product1: e.target.value })}>{productOpts}</select>
+          <select className="select" value={block.product2 || ''} onChange={e => onUpdate({ product2: e.target.value })}>{productOpts}</select>
+          <select className="select" value={block.product3 || ''} onChange={e => onUpdate({ product3: e.target.value })}>{productOpts}</select>
+        </div>
+      )}
+
+      {block.type === 'image' && (
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          <input className="input" value={block.src || ''} placeholder="https://… (URL de la imagen)" onChange={e => onUpdate({ src: e.target.value })} style={{fontSize:11, fontFamily:'var(--font-mono)'}} />
+          <input className="input" value={block.alt || ''} placeholder="Alt (descripción accesible)" onChange={e => onUpdate({ alt: e.target.value })} style={{fontSize:11}} />
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+            <select className="select" value={block.align || 'center'} onChange={e => onUpdate({ align: e.target.value })}>
+              <option value="left">Izquierda</option>
+              <option value="center">Centro</option>
+              <option value="right">Derecha</option>
+            </select>
+            <input className="input" type="number" min={20} max={100} value={block.widthPct || 100} onChange={e => onUpdate({ widthPct: parseInt(e.target.value) || 100 })} style={{fontSize:11}} />
+          </div>
+        </div>
+      )}
+
+      {(block.type === 'divider_line' || block.type === 'divider_short' || block.type === 'divider_dots') && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+          <select className="select" value={block.type} onChange={e => onUpdate({ type: e.target.value })}>
+            <option value="divider_line">Línea fina</option>
+            <option value="divider_short">Línea corta</option>
+            <option value="divider_dots">Puntos</option>
+          </select>
+          <input className="input" type="color" value={block.color || '#e2e8f0'} onChange={e => onUpdate({ color: e.target.value })} style={{padding:2, height:30}} />
+        </div>
+      )}
+
+      {(block.type === 'video' || block.type === 'freebird') && (
+        <input className="input" value={block.youtubeUrl || ''} placeholder="https://www.youtube.com/watch?v=…" onChange={e => onUpdate({ youtubeUrl: e.target.value })} style={{fontSize:11, fontFamily:'var(--font-mono)'}} />
+      )}
+
+      {(block.type === 'pimpam_hero' || block.type === 'pimpam_steps' || block.type === 'cta') && (
+        <div style={{fontSize:11, color:'var(--text-muted)', fontStyle:'italic', padding:6}}>
+          Edita los detalles de este bloque desde el editor del composer (al insertarlo en el lienzo).
+        </div>
+      )}
+    </div>
   );
 }
 

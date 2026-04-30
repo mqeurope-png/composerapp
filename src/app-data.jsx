@@ -277,8 +277,58 @@ function migrateMboDtf(state) {
   return patched
 }
 
+/* Migrar el schema viejo de bloques compuestos (introText + brandStrip +
+   blockType + products[] + includeHero/includeSteps) al nuevo: una lista
+   plana `compositorBlocks` con cada pieza como un bloque v3 estándar. Eso
+   permite que el editor del backoffice (y el "Desagrupar" del composer)
+   trabajen con la misma estructura que las plantillas y secciones — todo
+   se compone como una lista de bloques en lugar de campos rígidos. La
+   migración es idempotente: si ya existe `compositorBlocks` se respeta.
+   También se propaga `i18n.{lang}.introText` al `overridesByLang` del
+   bloque de texto generado para no perder traducciones. */
+function migrateComposedToCompositorBlocks(state) {
+  if (!state || !Array.isArray(state.composedBlocks)) return state
+  let touched = 0
+  const next = state.composedBlocks.map(c => {
+    if (Array.isArray(c.compositorBlocks) && c.compositorBlocks.length > 0) return c
+    const cb = []
+    if (c.introText) {
+      const overridesByLang = { es: c.introText }
+      if (c.i18n) {
+        for (const lang of Object.keys(c.i18n)) {
+          const tr = c.i18n[lang]
+          if (tr && tr.introText) overridesByLang[lang] = tr.introText
+        }
+      }
+      cb.push({ type: 'text', overridesByLang })
+    }
+    if (c.brandStrip && c.brandStrip !== 'none') {
+      cb.push({ type: 'brand_strip', brand: c.brandStrip })
+    }
+    const prods = Array.isArray(c.products) ? c.products : []
+    if (c.blockType === 'product_trio' && prods.length >= 3) {
+      cb.push({ type: 'product_trio', product1: prods[0], product2: prods[1], product3: prods[2] })
+    } else if (c.blockType === 'product_pair' && prods.length >= 2) {
+      cb.push({ type: 'product_pair', product1: prods[0], product2: prods[1] })
+    } else if (c.blockType === 'product_single' && prods.length >= 1) {
+      cb.push({ type: 'product_single', product1: prods[0] })
+    } else {
+      for (const pid of prods) cb.push({ type: 'product_single', product1: pid })
+    }
+    // Nota: deliberadamente no migramos includeHero/includeSteps. Son
+    // legacy y a partir de v5 se gestionan como bloques sueltos
+    // independientes (se pueden añadir manualmente al compuesto si el
+    // user lo desea).
+    if (cb.length === 0) return c
+    touched++
+    return Object.assign({}, c, { compositorBlocks: cb })
+  })
+  if (touched === 0) return state
+  return Object.assign({}, state, { composedBlocks: next })
+}
+
 Object.assign(window, {
   DEFAULT_PRODUCTS, getDefaultState, createBlock, LANGS, LANG_LABELS,
   PRODUCTS, BRANDS, PREWRITTEN_TEXTS, TEMPLATES, STANDALONE_BLOCKS, COMPOSED_BLOCKS,
-  migrateMboDtf, repairProductLinks,
+  migrateMboDtf, repairProductLinks, migrateComposedToCompositorBlocks,
 })

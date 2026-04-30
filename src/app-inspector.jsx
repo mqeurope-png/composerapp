@@ -1045,8 +1045,39 @@ function ComposedEditor({ block, onUpdate, lang, onOpenBackoffice }) {
     : null;
   if (!cb) return <div style={{padding:16, fontSize:12, color:'var(--text-subtle)'}}>Bloque compuesto no encontrado ({block.composedId})</div>;
 
-  const prods = (cb.products || []).map(pid => _liveProducts().find(p => p.id === pid)).filter(Boolean);
-  const intro = (cb.i18n && cb.i18n[lang] && cb.i18n[lang].introText) || cb.introText || '';
+  // v5: el compuesto se modela como compositorBlocks (lista de hijos v3).
+  // Si existe la usamos para resumir el contenido; si no, caemos al schema
+  // antiguo (introText + products + brandStrip) para datos legacy.
+  const compChildren = Array.isArray(cb.compositorBlocks) ? cb.compositorBlocks : null;
+  const legacyProds = compChildren
+    ? (() => {
+        const ids = [];
+        for (const c of compChildren) {
+          if (!c) continue;
+          if (c.product1) ids.push(c.product1);
+          if (c.product2) ids.push(c.product2);
+          if (c.product3) ids.push(c.product3);
+        }
+        return ids;
+      })()
+    : (cb.products || []);
+  const prods = legacyProds.map(pid => _liveProducts().find(p => p.id === pid)).filter(Boolean);
+  const intro = (() => {
+    if (compChildren) {
+      const t = compChildren.find(c => c && c.type === 'text');
+      if (t) {
+        if (t.overridesByLang && t.overridesByLang[lang] != null) return t.overridesByLang[lang];
+        if (t.i18n && t.i18n[lang] && t.i18n[lang].text) return t.i18n[lang].text;
+        return (t.overridesByLang && t.overridesByLang.es) || t.text || '';
+      }
+      return '';
+    }
+    return (cb.i18n && cb.i18n[lang] && cb.i18n[lang].introText) || cb.introText || '';
+  })();
+  const brandStripChild = compChildren
+    ? (compChildren.find(c => c && c.type === 'brand_strip') || null)
+    : null;
+  const brandStripId = brandStripChild ? brandStripChild.brand : (cb.brandStrip || null);
 
   return (
     <>
@@ -1054,6 +1085,11 @@ function ComposedEditor({ block, onUpdate, lang, onOpenBackoffice }) {
         <div style={{padding:10, background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', border:'1px dashed var(--border-strong)'}}>
           <div style={{fontSize:14, fontWeight:700}}>{cb.title}</div>
           {cb.desc && <div style={{fontSize:11, color:'var(--text-muted)', marginTop:3}}>{cb.desc}</div>}
+          {compChildren && (
+            <div style={{fontSize:11, color:'var(--text-subtle)', marginTop:6, fontFamily:'var(--font-mono)'}}>
+              {compChildren.length} bloques · usa "Desagrupar" en el lienzo para editarlos uno a uno
+            </div>
+          )}
         </div>
       </Section>
 
@@ -1071,16 +1107,9 @@ function ComposedEditor({ block, onUpdate, lang, onOpenBackoffice }) {
         </Section>
       )}
 
-      {cb.brandStrip && cb.brandStrip !== 'none' && (
+      {brandStripId && brandStripId !== 'none' && (
         <Section title="Strip de marca">
-          <div style={{fontSize:12, color:'var(--text-muted)'}}>→ {cb.brandStrip}</div>
-        </Section>
-      )}
-
-      {(cb.includeHero || cb.includeSteps) && (
-        <Section title="Extras">
-          {cb.includeHero && <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:4}}>+ Hero PimPam</div>}
-          {cb.includeSteps && <div style={{fontSize:12, color:'var(--text-muted)'}}>+ 4 pasos PimPam</div>}
+          <div style={{fontSize:12, color:'var(--text-muted)'}}>→ {brandStripId}</div>
         </Section>
       )}
 

@@ -683,7 +683,18 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
       case 'composed': {
         const cb = b.composedId ? composedList.find(c => c.id === b.composedId) : null
         if (cb) {
-          out.push(Object.assign({}, cb, { type: 'composed' }))
+          // Nuevo schema: compositorBlocks es una lista plana de bloques v3.
+          // Recursión por el mismo bridge para que cada hijo (text, brand_strip,
+          // product_*, image, cta, divider, video, hero, etc.) se renderice
+          // con todo el vocabulario v3 disponible. Si no hay compositorBlocks
+          // (legacy), pasa el cb tal cual y generateFullHtml usa los campos
+          // antiguos (introText, brandStrip, products[], etc.).
+          if (Array.isArray(cb.compositorBlocks) && cb.compositorBlocks.length > 0) {
+            const childV2 = v3BlocksToV2Blocks(cb.compositorBlocks, appState)
+            for (const x of childV2) out.push(x)
+          } else {
+            out.push(Object.assign({}, cb, { type: 'composed' }))
+          }
         }
         break
       }

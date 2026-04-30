@@ -1205,21 +1205,43 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
         {block.type === 'composed' && (() => {
           const cb = composed;
           if (!cb) return <div style={{padding:12, fontSize:12, color:'var(--text-subtle)'}}>Bloque compuesto no encontrado</div>;
-          const intro = (cb.i18n && cb.i18n[lang] && cb.i18n[lang].introText) || cb.introText || '';
-          const prods = (cb.products || []).map(pid => _products.find(p => p.id === pid)).filter(Boolean);
+
+          // v5: si compositorBlocks existe lo usamos como fuente de verdad;
+          // si no, caemos al schema legacy (introText + brandStrip + products).
+          const compChildren = Array.isArray(cb.compositorBlocks) ? cb.compositorBlocks : null;
+          const introTextVal = (() => {
+            if (compChildren) {
+              const t = compChildren.find(c => c && c.type === 'text');
+              if (!t) return '';
+              if (t.overridesByLang && t.overridesByLang[lang] != null) return t.overridesByLang[lang];
+              if (t.i18n && t.i18n[lang] && t.i18n[lang].text) return t.i18n[lang].text;
+              return (t.overridesByLang && t.overridesByLang.es) || t.text || '';
+            }
+            return (cb.i18n && cb.i18n[lang] && cb.i18n[lang].introText) || cb.introText || '';
+          })();
+          const brandStripVal = compChildren
+            ? ((compChildren.find(c => c && c.type === 'brand_strip') || {}).brand || null)
+            : (cb.brandStrip && cb.brandStrip !== 'none' ? cb.brandStrip : null);
+          const prodIds = compChildren
+            ? compChildren.flatMap(c => [c.product1, c.product2, c.product3]).filter(Boolean)
+            : (cb.products || []);
+          const prods = prodIds.map(pid => _products.find(p => p.id === pid)).filter(Boolean);
+          const summary = compChildren
+            ? compChildren.length + ' bloque' + (compChildren.length === 1 ? '' : 's')
+            : (cb.blockType || 'composed');
           return (
             <div style={{padding:12, border:'1px dashed var(--border-strong)', borderRadius:'var(--r-md)'}}>
               <div style={{fontSize:10, textTransform:'uppercase', letterSpacing:1, color:'var(--text-subtle)', fontFamily:'var(--font-mono)'}}>
-                Compuesto · {cb.blockType}
+                Compuesto · {summary}
               </div>
               <div style={{fontWeight:700, fontSize:13, marginTop:4}}>{cb.title}</div>
-              {intro && (
+              {introTextVal && (
                 <p style={{fontSize:12, color:'var(--text-muted)', margin:'6px 0 0', lineHeight:1.5}}>
-                  {intro.length > 160 ? intro.slice(0,160) + '…' : intro}
+                  {introTextVal.length > 160 ? introTextVal.slice(0,160) + '…' : introTextVal}
                 </p>
               )}
-              {cb.brandStrip && cb.brandStrip !== 'none' && (
-                <div style={{fontSize:11, color:'var(--text-subtle)', marginTop:6}}>→ Strip {cb.brandStrip}</div>
+              {brandStripVal && (
+                <div style={{fontSize:11, color:'var(--text-subtle)', marginTop:6}}>→ Strip {brandStripVal}</div>
               )}
               {prods.length > 0 && (
                 <div style={{display:'flex', gap:6, marginTop:8, flexWrap:'wrap'}}>
@@ -1231,8 +1253,6 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
                   ))}
                 </div>
               )}
-              {cb.includeHero && <div style={{fontSize:11, color:'var(--text-subtle)', marginTop:6}}>+ Hero PimPam</div>}
-              {cb.includeSteps && <div style={{fontSize:11, color:'var(--text-subtle)', marginTop:6}}>+ 4 pasos</div>}
             </div>
           );
         })()}
