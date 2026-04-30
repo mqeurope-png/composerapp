@@ -51,6 +51,20 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   const templates = (appState && appState.templates) || TEMPLATES;
   const blocks = (appState && appState.standaloneBlocks) || STANDALONE_BLOCKS;
   const composed = (appState && appState.composedBlocks) || COMPOSED_BLOCKS || [];
+
+  // Resolver una marca por ID con fallback sensato. Antes el código usaba
+  // `brands.find(...) || brands[brands.length - 1] || { label, color:'#999' }`
+  // — el segundo fallback era un bug latente: cuando el item tenía
+  // brand:'mix' (que no existe como entrada en `brands[]`, es una
+  // convención UI para "Multi-marca"), el find fallaba y la card mostraba
+  // la ÚLTIMA marca del array. Bomedia estaba al final, así que pasaba
+  // desapercibido — hasta que añadí las marcas Muestras al final, y los
+  // items multi-marca empezaron a verse como "Muestras Textil". Apr 2026.
+  const _MIX_BRAND = { id: 'mix', label: 'Multi-marca', color: '#94a3b8' };
+  const resolveBrand = (id) => {
+    if (!id || id === 'mix') return _MIX_BRAND;
+    return brands.find(b => b.id === id) || { label: id, color: '#94a3b8' };
+  };
   const ctaBlocks = (appState && appState.ctaBlocks) || [];
 
   // Persist edits from the drawer back into appState.
@@ -148,29 +162,38 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   const current = titleMap[tab] || titleMap.products;
 
   const _matches = (str) => !search || (str || '').toLowerCase().includes(search.toLowerCase());
+  // Helper compartido: 'all' pasa todo; 'mix' aísla items con brand:'mix'
+  // o sin marca; un brand id específico hace match exacto. Antes era inline
+  // `p.brand === brandFilter` lo que dejaba fuera 'mix' del filtro propio
+  // de Multi-marca. Apr 2026.
+  const _matchesBrand = (b) => {
+    if (brandFilter === 'all') return true;
+    if (brandFilter === 'mix') return !b || b === 'mix';
+    return b === brandFilter;
+  };
   const filteredProducts = products.filter(p =>
-    (brandFilter === 'all' || p.brand === brandFilter) &&
+    _matchesBrand(p.brand) &&
     (_matches(p.name) || _matches(L(p, 'name')))
   );
   const filteredTexts = texts.filter(t =>
-    (brandFilter === 'all' || t.brand === brandFilter) &&
+    _matchesBrand(t.brand) &&
     (_matches(t.name) || _matches(L(t, 'name')) || _matches(t.text))
   );
   const filteredTemplates = templates.filter(t =>
-    (brandFilter === 'all' || t.brand === brandFilter) &&
+    _matchesBrand(t.brand) &&
     (_matches(t.name) || _matches(L(t, 'name')) || _matches(t.desc))
   );
   const filteredBlocks = blocks.filter(b =>
-    (brandFilter === 'all' || b.brand === brandFilter) &&
+    _matchesBrand(b.brand) &&
     (_matches(b.title) || _matches(L(b, 'title')) || _matches(b.section))
   );
   const filteredComposed = composed.filter(c => {
     const cBrand = c.brand || c.brandStrip;
-    return (brandFilter === 'all' || cBrand === brandFilter) &&
+    return _matchesBrand(cBrand) &&
       (_matches(c.title) || _matches(L(c, 'title')) || _matches(c.desc) || _matches(c.introText));
   });
   const filteredCtas = ctaBlocks.filter(c =>
-    (brandFilter === 'all' || c.brand === brandFilter) &&
+    _matchesBrand(c.brand) &&
     (_matches(c.name) || _matches(c.title) || _matches(c.text) || _matches(c.url))
   );
 
@@ -202,6 +225,18 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
       </div>
       <div className="brand-chips" style={{padding:0, margin:0}}>
         <button className={'brand-chip' + (brandFilter === 'all' ? ' active' : '')} onClick={() => setBrandFilter('all')}>Todas</button>
+        {/* "Multi-marca" como filtro: aísla items con brand:'mix' o sin marca
+            asignada. La compartición con marca específica (mix items
+            apareciendo junto a 'artisjet') la hace el matchesBrand del
+            sidebar — aquí en BO simplemente filtramos. */}
+        <button
+          className={'brand-chip' + (brandFilter === 'mix' ? ' active' : '')}
+          onClick={() => setBrandFilter('mix')}
+          style={brandFilter === 'mix' ? {} : { color: '#94a3b8' }}
+        >
+          <span className="brand-chip-dot" style={{ background: '#94a3b8' }} />
+          Multi-marca
+        </button>
         {brands.filter(b => b.id !== 'bomedia').map(b => (
           <button key={b.id} className={'brand-chip' + (brandFilter === b.id ? ' active' : '')} onClick={() => setBrandFilter(b.id)} style={brandFilter === b.id ? {} : { color: b.color }}>
             <span className="brand-chip-dot" style={{ background: b.color }} />
@@ -316,7 +351,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
           {renderToolbar('Buscar textos…')}
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
             {filteredTexts.map(t => {
-              const brand = brands.find(b => b.id === t.brand) || brands[brands.length - 1] || { label: t.brand, color: '#999' };
+              const brand = resolveBrand(t.brand);
               const hidden = isItemHidden && isItemHidden('prewrittenTexts', t.id);
               return (
                 <div key={t.id} className={'product-card' + (hidden ? ' hidden-for-user' : '')} style={{padding:16, display:'grid', gridTemplateColumns:'auto 36px 1fr auto', gap:14, alignItems:'center', cursor:'pointer'}} onClick={() => setEditing({ kind: 'text', item: t })}>
@@ -344,7 +379,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
           {renderToolbar('Buscar plantillas…')}
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
             {filteredTemplates.map(t => {
-              const brand = brands.find(b => b.id === t.brand) || brands[brands.length - 1] || { label: t.brand, color: '#999' };
+              const brand = resolveBrand(t.brand);
               const colorClassMap = { blue:'oklch(60% 0.18 255)', purple:'oklch(60% 0.18 295)', orange:'oklch(65% 0.17 45)', teal:'oklch(60% 0.12 180)', gray:'oklch(70% 0.02 250)' };
               const tplColor = colorClassMap[t.colorClass || 'gray'];
               const hidden = isItemHidden && isItemHidden('templates', t.id);
@@ -397,7 +432,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
           {renderToolbar('Buscar bloques…')}
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
             {filteredBlocks.map(b => {
-              const brand = brands.find(x => x.id === b.brand) || brands[brands.length - 1] || { label: b.brand, color: '#999' };
+              const brand = resolveBrand(b.brand);
               const hidden = isItemHidden && isItemHidden('standaloneBlocks', b.id);
               return (
                 <div key={b.id} className={'product-card' + (hidden ? ' hidden-for-user' : '')} style={{padding:16, display:'grid', gridTemplateColumns:'auto 40px 1fr auto auto', gap:14, alignItems:'center', cursor:'pointer'}} onClick={() => setEditing({ kind: 'standalone', item: b })}>
@@ -425,7 +460,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
             {filteredComposed.map(c => {
               const cBrand = c.brand || c.brandStrip;
-              const brand = brands.find(x => x.id === cBrand) || brands[brands.length - 1] || { label: cBrand || 'mix', color: '#999' };
+              const brand = resolveBrand(cBrand);
               const colorClassMap = { blue:'oklch(60% 0.18 255)', purple:'oklch(60% 0.18 295)', orange:'oklch(65% 0.17 45)', teal:'oklch(60% 0.12 180)', gray:'oklch(70% 0.02 250)' };
               const tag = colorClassMap[c.colorTag || 'gray'];
               const hidden = isItemHidden && isItemHidden('composedBlocks', c.id);

@@ -100,7 +100,16 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
 
   const q = search.trim().toLowerCase();
   const matchesQ = (s) => !q || (s || '').toLowerCase().includes(q);
-  const matchesBrand = (b) => brandFilter === 'all' || b === brandFilter || b === 'mix';
+  // brandFilter 'all'  → todo
+  // brandFilter 'mix'  → solo items con brand:'mix' o sin marca (Multi-marca)
+  // brandFilter '<id>' → items de esa marca + items mix (los multi-marca
+  //                      aparecen junto a cualquier marca específica para
+  //                      no esconderlos accidentalmente al filtrar)
+  const matchesBrand = (b) => {
+    if (brandFilter === 'all') return true;
+    if (brandFilter === 'mix') return !b || b === 'mix';
+    return b === brandFilter || b === 'mix' || !b;
+  };
 
   const showProducts = typeFilter === 'all' || typeFilter === 'productos';
   const showCompuestos = typeFilter === 'all' || typeFilter === 'compuestos';
@@ -202,6 +211,17 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
           className={'brand-chip' + (brandFilter === 'all' ? ' active' : '')}
           onClick={() => setBrandFilter('all')}
         >Todas</button>
+        {/* Chip "Multi-marca" — filtra a los items con brand:'mix' o sin
+            marca asignada. Por convención no es una marca real, pero el
+            user puede querer ver solo lo cross-brand. */}
+        <button
+          className={'brand-chip' + (brandFilter === 'mix' ? ' active' : '')}
+          onClick={() => setBrandFilter('mix')}
+          style={brandFilter === 'mix' ? {} : { color: '#94a3b8' }}
+        >
+          <span className="brand-chip-dot" style={{ background: '#94a3b8' }} />
+          Multi-marca
+        </button>
         {BRANDS.filter(b => b.id !== 'bomedia').map(b => (
           <button
             key={b.id}
@@ -771,6 +791,10 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
     composed: 'Bloque compuesto',
     section: 'Sección · ' + ((block.columns && block.columns.length) || 2) + ' columnas',
     divider: 'Divisor · ' + (block.style === 'short' ? 'línea corta' : block.style === 'dots' ? 'puntos' : 'línea'),
+    // Etiquetas para tipos legacy literales (datos no migrados todavía).
+    divider_line: 'Divisor · línea',
+    divider_short: 'Divisor · línea corta',
+    divider_dots: 'Divisor · puntos',
   }[block.type] || block.type;
 
   // Treat the three legacy hero variants as a single "Hero" concept for
@@ -978,8 +1002,16 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
       </div>
 
       <div className="block-body">
-        {block.type === 'divider' && (() => {
-          const style = block.style || 'line';
+        {/* Reconocer también divider_line/short/dots legacy: la migración al
+            cargar normaliza estos a type:'divider', pero hacemos render
+            defensivo por si algún dato vivo escapa (ej. AI agent que lo
+            crea sin pasar por createBlock, o sincronización desde otro
+            cliente con código viejo). */}
+        {(block.type === 'divider' || block.type === 'divider_line' || block.type === 'divider_short' || block.type === 'divider_dots') && (() => {
+          const style = block.style
+            || (block.type === 'divider_short' ? 'short'
+              : block.type === 'divider_dots' ? 'dots'
+              : 'line');
           const color = block.color || '#e2e8f0';
           const padV = (typeof block.paddingV === 'number') ? block.paddingV : 24;
           if (style === 'dots') return (

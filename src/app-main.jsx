@@ -95,6 +95,11 @@ function App() {
       // a la nueva forma `compositorBlocks` (lista plana de bloques v3).
       // Idempotente — si ya hay compositorBlocks no toca nada.
       if (typeof migrateComposedToCompositorBlocks === 'function') Object.assign(stored, migrateComposedToCompositorBlocks(stored));
+      // Normaliza divider_line/short/dots (tipo literal del factory antiguo
+      // del BO) al shape canónico {type:'divider', style}. Sin esto los
+      // divisores guardados antes del fix Apr 2026 no aparecían en el canvas
+      // al cargar plantillas viejas (sí en el preview gracias al bridge).
+      if (typeof migrateDividerTypes === 'function') Object.assign(stored, migrateDividerTypes(stored));
       if (!stored.standaloneBlocks) stored.standaloneBlocks = defaults.standaloneBlocks;
       if (!stored.templates) stored.templates = defaults.templates;
       // Backwards-compat: if there's no users[] yet, create a single admin
@@ -322,6 +327,7 @@ function App() {
         cloudData = migrateMboDtf(cloudData);
         if (typeof repairProductLinks === 'function') cloudData = repairProductLinks(cloudData);
         if (typeof migrateComposedToCompositorBlocks === 'function') cloudData = migrateComposedToCompositorBlocks(cloudData);
+        if (typeof migrateDividerTypes === 'function') cloudData = migrateDividerTypes(cloudData);
         if (!cloudData.standaloneBlocks) cloudData.standaloneBlocks = defaults.standaloneBlocks;
         if (!cloudData.templates) cloudData.templates = defaults.templates;
         // Multi-user migration: pre-existing Supabase rows have no users[].

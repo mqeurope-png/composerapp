@@ -334,8 +334,59 @@ function migrateComposedToCompositorBlocks(state) {
   return Object.assign({}, state, { composedBlocks: next })
 }
 
+/* Normalizar bloques de tipo divider_line/short/dots (literal) al shape
+   canónico {type:'divider', style:'line/short/dots'} que reconocen el
+   renderer (dividerBlockHtml), el canvas BlockCard y el inspector
+   DividerBlockEditor. Antes el factory del BO (CompositorBlocksListEditor
+   y addSectionChild) escribía el tipo literal — esos divisores se
+   guardaban en compositorBlocks de plantillas/compuestos y al cargar la
+   plantilla en el composer no se renderizaban en el canvas (solo en el
+   preview, gracias al fallback que hicimos en el bridge). Esta migración
+   recorre todos los compositorBlocks anidados y los reescribe in-place.
+   Idempotente: si ya están en formato canónico no toca nada. */
+function migrateDividerTypes(state) {
+  if (!state || typeof state !== 'object') return state
+  let touched = 0
+  const normalize = (block) => {
+    if (!block || typeof block !== 'object') return block
+    let next = block
+    // Reescribir el bloque actual si es un divider_* literal
+    if (block.type === 'divider_line' || block.type === 'divider_short' || block.type === 'divider_dots') {
+      const style = block.type === 'divider_short' ? 'short'
+                  : block.type === 'divider_dots' ? 'dots'
+                  : 'line'
+      next = Object.assign({}, block, { type: 'divider', style: block.style || style })
+      touched++
+    }
+    // Recursar por columns[].blocks (secciones) — independiente del tipo
+    // del propio bloque: una sección puede tener divisores como hijos.
+    if (Array.isArray(next.columns)) {
+      const cols = next.columns.map(col => Array.isArray(col.blocks)
+        ? Object.assign({}, col, { blocks: col.blocks.map(normalize) })
+        : col)
+      next = Object.assign({}, next, { columns: cols })
+    }
+    return next
+  }
+  const walkList = (list) => Array.isArray(list)
+    ? list.map(item => {
+        if (!item || typeof item !== 'object') return item
+        let v = item
+        if (Array.isArray(v.compositorBlocks)) {
+          v = Object.assign({}, v, { compositorBlocks: v.compositorBlocks.map(normalize) })
+        }
+        return v
+      })
+    : list
+  const patched = Object.assign({}, state)
+  if (Array.isArray(state.templates)) patched.templates = walkList(state.templates)
+  if (Array.isArray(state.composedBlocks)) patched.composedBlocks = walkList(state.composedBlocks)
+  if (touched === 0) return state
+  return patched
+}
+
 Object.assign(window, {
   DEFAULT_PRODUCTS, getDefaultState, createBlock, LANGS, LANG_LABELS,
   PRODUCTS, BRANDS, PREWRITTEN_TEXTS, TEMPLATES, STANDALONE_BLOCKS, COMPOSED_BLOCKS,
-  migrateMboDtf, repairProductLinks, migrateComposedToCompositorBlocks,
+  migrateMboDtf, repairProductLinks, migrateComposedToCompositorBlocks, migrateDividerTypes,
 })

@@ -125,7 +125,7 @@ function Inspector({ block, onUpdate, onClose, onDelete, onDuplicate, lang, setL
         {block.type === 'cta' && (
           <CtaBlockEditor block={block} onUpdate={onUpdate} />
         )}
-        {block.type === 'divider' && (
+        {(block.type === 'divider' || block.type === 'divider_line' || block.type === 'divider_short' || block.type === 'divider_dots') && (
           <DividerBlockEditor block={block} onUpdate={onUpdate} />
         )}
 
@@ -1284,8 +1284,16 @@ function CtaBlockEditor({ block, onUpdate }) {
 
 /* Editor de divisores. 3 estilos + color + spacing vertical. */
 function DividerBlockEditor({ block, onUpdate }) {
-  const set = (k, v) => onUpdate(block.id, { ...block, [k]: v });
-  const style = block.style || 'line';
+  // Set normaliza el bloque al shape canónico {type:'divider', style,...}
+  // en cada edit — si entró como divider_line/short/dots literal, sale
+  // siendo divider con style derivado. Apr 2026 audit fix.
+  const set = (k, v) => onUpdate(block.id, { ...block, type: 'divider', [k]: v });
+  // Derivar style cuando el block es legacy (no tiene block.style explícito
+  // pero su type lo codifica).
+  const style = block.style
+    || (block.type === 'divider_short' ? 'short'
+      : block.type === 'divider_dots' ? 'dots'
+      : 'line');
   const color = block.color || '#e2e8f0';
   const padV = (typeof block.paddingV === 'number') ? block.paddingV : 24;
   const styles = [
