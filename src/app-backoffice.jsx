@@ -96,6 +96,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   ];
   const adminNavItems = [
     { id: 'users', label: 'Usuarios', icon: 'lock', count: users.length },
+    { id: 'images', label: 'Imágenes', icon: 'copy', count: ((appState && appState.uploadedImages) || []).length },
     { id: 'ai', label: 'Asistente IA', icon: 'sparkles' },
     { id: 'settings', label: 'Ajustes', icon: 'settings' },
   ];
@@ -110,7 +111,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   // Bounce non-admin users away from admin-only tabs (defensive — they
   // shouldn't be able to reach them via UI, but state may be stale)
   React.useEffect(() => {
-    if (!isAdmin && (tab === 'users' || tab === 'ai' || tab === 'settings')) {
+    if (!isAdmin && (tab === 'users' || tab === 'ai' || tab === 'settings' || tab === 'images')) {
       setTab('products');
     }
   }, [isAdmin, tab]);
@@ -127,6 +128,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
     users: { title: 'Usuarios', sub: 'Gestiona accesos y roles. Solo admin.' },
     ai: { title: 'Asistente de redacción', sub: 'API key y tono por idioma. Solo admin.' },
     settings: { title: 'Ajustes', sub: 'Sincronización, acceso y preferencias. Solo admin.' },
+    images: { title: 'Biblioteca de imágenes', sub: 'Gestiona las imágenes subidas. Borrar aquí solo las quita de la biblioteca; el archivo en WordPress se conserva (puedes borrarlo desde boprint.net/wp-admin → Media).' },
     mytone: { title: 'Mi tono IA', sub: 'Tu prompt personal por idioma. Solo lo ves tú y se aplica cuando pides ayuda al asistente.' },
   };
   const current = titleMap[tab] || titleMap.products;
@@ -491,6 +493,10 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
 
         {tab === 'myaccount' && currentUser && !isAdmin && (
           <MyAccountPanel currentUser={currentUser} setAppState={setAppState} />
+        )}
+
+        {tab === 'images' && isAdmin && (
+          <ImageLibraryAdminPanel appState={appState} setAppState={setAppState} />
         )}
 
         {tab === 'ai' && <AISettingsPanel appState={appState} setAppState={setAppState} />}
@@ -2183,6 +2189,123 @@ function ImageUploadInput({ value, onChange, placeholder, prefix }) {
   );
 }
 
+/* ────────────── Backoffice → Imágenes (admin only) ──────────────
+   Lista todas las imágenes que la app conoce: subidas previas + las que
+   se referencian indirectamente (productos, marcas, heroes). Permite
+   borrar (de la biblioteca, no del WP origen) y subir nuevas. */
+function ImageLibraryAdminPanel({ appState, setAppState }) {
+  const [filter, setFilter] = React.useState('upload');
+  const [search, setSearch] = React.useState('');
+  const [pendingPaste, setPendingPaste] = React.useState('');
+
+  const items = React.useMemo(() => _collectKnownImages(appState || {}), [appState]);
+  const groups = [
+    { id: 'all', label: 'Todas', count: items.length },
+    { id: 'upload', label: 'Subidas', count: items.filter(i => i.source === 'upload').length },
+    { id: 'product', label: 'Productos', count: items.filter(i => i.source === 'product').length },
+    { id: 'brand', label: 'Marcas', count: items.filter(i => i.source === 'brand').length },
+    { id: 'hero', label: 'Heroes', count: items.filter(i => i.source === 'hero').length },
+  ];
+  const filtered = items.filter(it =>
+    (filter === 'all' || it.source === filter) &&
+    (!search || (it.label || '').toLowerCase().includes(search.toLowerCase()) || (it.url || '').toLowerCase().includes(search.toLowerCase()))
+  );
+
+  // Quitar de uploadedImages (solo afecta a items 'upload'). Para
+  // productos/marcas/heroes hay que editar el item original (mensaje
+  // explicativo en la UI).
+  const removeFromLibrary = (url) => {
+    if (!url) return;
+    if (!window.confirm('¿Borrar esta imagen de la biblioteca?\n\nSe quitará de los thumbnails. El archivo en WordPress NO se borra (entra a boprint.net/wp-admin → Media para eliminarlo del servidor).')) return;
+    setAppState(prev => ({
+      ...prev,
+      uploadedImages: ((prev && prev.uploadedImages) || []).filter(x => x.url !== url),
+    }));
+  };
+
+  const addUrl = (url) => {
+    const trimmed = (url || '').trim();
+    if (!trimmed || !/^https?:\/\//i.test(trimmed)) return;
+    setAppState(prev => {
+      const list = ((prev && prev.uploadedImages) || []);
+      if (list.some(x => x.url === trimmed)) return prev;
+      return { ...prev, uploadedImages: [...list, { url: trimmed, name: 'Manual', addedAt: Date.now() }] };
+    });
+    setPendingPaste('');
+  };
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:14, maxWidth:1100}}>
+      <div className="product-card" style={{padding:18}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:6}}>
+          <Icon name="copy" size={18}/>
+          <div style={{fontSize:14, fontWeight:600}}>Subir imagen nueva</div>
+        </div>
+        <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:10}}>
+          Sube un archivo a boprint.net o pega una URL externa. Aparecerá en la biblioteca para que cualquier comercial la use desde el composer.
+        </div>
+        <ImageUploadInput value="" onChange={url => { if (url) addUrl(url); }} prefix="library" placeholder="https://… (URL externa) o pulsa Subir / Biblioteca" />
+      </div>
+
+      <div className="product-card" style={{padding:18}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, gap:12, flexWrap:'wrap'}}>
+          <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+            {groups.map(g => (
+              <button key={g.id} className={'brand-chip' + (filter === g.id ? ' active' : '')} onClick={() => setFilter(g.id)}>
+                {g.label} <span className="mono" style={{opacity:0.6}}>{g.count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="bo-search" style={{minWidth:220}}>
+            <Icon name="search" size={14}/>
+            <input placeholder="Buscar por nombre o URL…" value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+        </div>
+
+        {filter !== 'upload' && filter !== 'all' && (
+          <div style={{padding:'10px 12px', background:'var(--bg-sunken)', borderRadius:'var(--r-sm)', fontSize:11.5, color:'var(--text-muted)', marginBottom:12, lineHeight:1.5}}>
+            ℹ️ Estas imágenes vienen del catálogo ({filter}). Para borrarlas, edita el producto/marca/hero correspondiente en su tab y limpia el campo de imagen.
+          </div>
+        )}
+
+        {filtered.length === 0 ? (
+          <div style={{padding:'40px 20px', textAlign:'center', color:'var(--text-muted)', fontSize:13}}>
+            {items.length === 0 ? 'No hay imágenes todavía. Sube la primera arriba.' : 'Sin resultados con ese filtro.'}
+          </div>
+        ) : (
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:12}}>
+            {filtered.map((it, i) => (
+              <div key={i} style={{border:'1px solid var(--border)', borderRadius:'var(--r-sm)', overflow:'hidden', background:'var(--bg-panel)', display:'flex', flexDirection:'column'}}>
+                <div style={{aspectRatio:'4/3', display:'grid', placeItems:'center', overflow:'hidden', background:'#fff', position:'relative'}}>
+                  <img src={it.url} alt={it.label} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onError={e => { e.target.style.opacity = 0.2; }}/>
+                  <span style={{position:'absolute', top:6, right:6, padding:'2px 6px', background:'rgba(0,0,0,0.7)', color:'#fff', borderRadius:4, fontSize:9, fontFamily:'var(--font-mono)'}}>{it.source}</span>
+                </div>
+                <div style={{padding:'8px 10px', display:'flex', flexDirection:'column', gap:4, flex:1}}>
+                  <div style={{fontSize:11, fontWeight:600, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{it.label || '(sin nombre)'}</div>
+                  <div style={{fontSize:9, color:'var(--text-muted)', fontFamily:'var(--font-mono)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}} title={it.url}>{it.url}</div>
+                  <div style={{display:'flex', gap:4, marginTop:'auto', paddingTop:6}}>
+                    <button className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', flex:1}} onClick={() => { navigator.clipboard?.writeText(it.url); }} title="Copiar URL">
+                      <Icon name="copy" size={10}/> URL
+                    </button>
+                    <a className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', flex:1, textDecoration:'none', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:4}} href={it.url} target="_blank" rel="noopener noreferrer" title="Abrir en pestaña nueva">
+                      <Icon name="share" size={10}/> Ver
+                    </a>
+                    {it.source === 'upload' && (
+                      <button className="btn btn-ghost" style={{fontSize:10, padding:'3px 8px', color:'var(--danger)'}} onClick={() => removeFromLibrary(it.url)} title="Quitar de la biblioteca">
+                        <Icon name="trash" size={10}/>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ────────────── Image library modal ──────────────
    Modal that shows a grid of every image URL the app already knows about
    (product photos, brand logos, hero images from blocks/standalones, plus
@@ -2487,4 +2610,4 @@ function SettingsPanel({ appState, setAppState }) {
   );
 }
 
-Object.assign(window, { Backoffice, AISettingsPanel, AutoTranslatePanel, SettingsPanel, UsersPanel, UserBOEdit, AiStylesAdminOverview, MyToneIaPanel, MyAccountPanel, ComposedBOEdit, CtaSavedBOEdit, ImageUploadInput, ImageLibraryModal, exportAppStateAsJson, blankItemForKind });
+Object.assign(window, { Backoffice, AISettingsPanel, AutoTranslatePanel, SettingsPanel, UsersPanel, UserBOEdit, AiStylesAdminOverview, MyToneIaPanel, MyAccountPanel, ComposedBOEdit, CtaSavedBOEdit, ImageUploadInput, ImageLibraryModal, ImageLibraryAdminPanel, exportAppStateAsJson, blankItemForKind });
