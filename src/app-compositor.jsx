@@ -263,7 +263,7 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                 user can build emails with side-by-side blocks. */}
             <div className="group">
               <div className="group-header">
-                Layout <span className="count mono">2</span>
+                Layout <span className="count mono">5</span>
               </div>
               <button className="lib-item" onClick={() => onAddBlock({ type: 'section_2col' })}>
                 <div className="lib-icon mix"><Icon name="grid" size={14} /></div>
@@ -283,6 +283,45 @@ function Sidebar({ collapsed, onToggle, blocks, onAddBlock, brandFilter, setBran
                   <div className="lib-sub">Sección con tres columnas iguales (33/33/33). Stack en móvil.</div>
                   <div className="lib-meta">
                     <span className="lib-badge" style={{background:'color-mix(in oklch, var(--accent) 12%, transparent)', color:'var(--accent-ink)', fontWeight:600}}>layout</span>
+                  </div>
+                </div>
+                <span className="lib-add"><Icon name="plus" size={14} /></span>
+              </button>
+              <button className="lib-item" onClick={() => onAddBlock({ type: 'divider_line' })}>
+                <div className="lib-icon mix" style={{display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <div style={{width:18, height:1, background:'currentColor'}}/>
+                </div>
+                <div style={{minWidth:0}}>
+                  <div className="lib-title">Línea fina</div>
+                  <div className="lib-sub">Línea horizontal sutil, full width. Ideal entre secciones.</div>
+                  <div className="lib-meta">
+                    <span className="lib-badge" style={{background:'var(--bg-sunken)', color:'var(--text-muted)'}}>divisor</span>
+                  </div>
+                </div>
+                <span className="lib-add"><Icon name="plus" size={14} /></span>
+              </button>
+              <button className="lib-item" onClick={() => onAddBlock({ type: 'divider_short' })}>
+                <div className="lib-icon mix" style={{display:'flex', alignItems:'center', justifyContent:'center'}}>
+                  <div style={{width:10, height:2, background:'currentColor', borderRadius:1}}/>
+                </div>
+                <div style={{minWidth:0}}>
+                  <div className="lib-title">Línea corta centrada</div>
+                  <div className="lib-sub">Línea corta de 80px centrada. Separador elegante de capítulos.</div>
+                  <div className="lib-meta">
+                    <span className="lib-badge" style={{background:'var(--bg-sunken)', color:'var(--text-muted)'}}>divisor</span>
+                  </div>
+                </div>
+                <span className="lib-add"><Icon name="plus" size={14} /></span>
+              </button>
+              <button className="lib-item" onClick={() => onAddBlock({ type: 'divider_dots' })}>
+                <div className="lib-icon mix" style={{display:'flex', alignItems:'center', justifyContent:'center', letterSpacing:2, fontSize:14}}>
+                  ···
+                </div>
+                <div style={{minWidth:0}}>
+                  <div className="lib-title">Puntos ornamentales</div>
+                  <div className="lib-sub">Tres puntos centrados con espaciado. Separador refinado.</div>
+                  <div className="lib-meta">
+                    <span className="lib-badge" style={{background:'var(--bg-sunken)', color:'var(--text-muted)'}}>divisor</span>
                   </div>
                 </div>
                 <span className="lib-add"><Icon name="plus" size={14} /></span>
@@ -715,6 +754,7 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
     footer: 'Pie',
     composed: 'Bloque compuesto',
     section: 'Sección · ' + ((block.columns && block.columns.length) || 2) + ' columnas',
+    divider: 'Divisor · ' + (block.style === 'short' ? 'línea corta' : block.style === 'dots' ? 'puntos' : 'línea'),
   }[block.type] || block.type;
 
   // Treat the three legacy hero variants as a single "Hero" concept for
@@ -900,6 +940,26 @@ function BlockCard({ block, idx, total, selected, onSelect, onUpdate, onDelete, 
       </div>
 
       <div className="block-body">
+        {block.type === 'divider' && (() => {
+          const style = block.style || 'line';
+          const color = block.color || '#e2e8f0';
+          const padV = (typeof block.paddingV === 'number') ? block.paddingV : 24;
+          if (style === 'dots') return (
+            <div style={{padding: padV + 'px 20px', textAlign:'center', letterSpacing:8, fontSize:18, color, lineHeight:1, fontFamily:'Helvetica,Arial,sans-serif'}}>
+              ·&nbsp;·&nbsp;·
+            </div>
+          );
+          if (style === 'short') return (
+            <div style={{padding: padV + 'px 20px', textAlign:'center'}}>
+              <div style={{display:'inline-block', width:80, height:2, background:color, borderRadius:1}} />
+            </div>
+          );
+          return (
+            <div style={{padding: padV + 'px 20px'}}>
+              <div style={{height:1, background:color}} />
+            </div>
+          );
+        })()}
         {block.type === 'image' && (
           <div style={{padding:12, textAlign: block.align || 'center'}}>
             {block.src ? (
@@ -1222,6 +1282,16 @@ function ColumnAddPicker({ onPick, columnLabel, appState }) {
           </button>
           <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => setMode('cta')}>
             <Icon name="zap" size={14}/> Botón CTA
+          </button>
+          <div style={{height:1, background:'var(--border)', margin:'4px 0'}}/>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => pick({ type:'divider_line' })}>
+            <span style={{width:14, height:1, background:'currentColor', display:'inline-block'}}/> Línea fina
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => pick({ type:'divider_short' })}>
+            <span style={{width:8, height:2, background:'currentColor', borderRadius:1, display:'inline-block'}}/> Línea corta
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:12, justifyContent:'flex-start', padding:'8px 10px', gap:8}} onClick={() => pick({ type:'divider_dots' })}>
+            <span style={{letterSpacing:2, fontSize:14}}>···</span> Puntos
           </button>
         </div>
       )}

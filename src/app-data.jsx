@@ -131,6 +131,12 @@ function createBlock(type) {
       bg:"#1d4ed8", color:"#ffffff", align:"center",
       panelBg:"transparent", panelBorder:"transparent",
     }
+    /* Divisor visual entre bloques. Tres variantes: línea fina full
+       width, línea corta centrada (más elegante para separar secciones)
+       y puntos centrados (separador ornamental). */
+    case "divider_line": return { id, type:"divider", style:"line", color:"#e2e8f0", paddingV:24 }
+    case "divider_short": return { id, type:"divider", style:"short", color:"#cbd5e1", paddingV:32 }
+    case "divider_dots": return { id, type:"divider", style:"dots", color:"#94a3b8", paddingV:28 }
     default: return { id, type }
   }
 }

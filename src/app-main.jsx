@@ -230,6 +230,22 @@ function App() {
   // Expose expandTemplate so the AI agent's load_template tool can use the
   // app's canonical template-expansion logic instead of reimplementing it.
   React.useEffect(() => { window.expandTemplate = expandTemplate; });
+  // Registrar recordUploadedImage SIEMPRE (no solo cuando ImageLibraryModal
+  // está montado) — antes las subidas hechas desde ImageUploadInput sin
+  // abrir la biblioteca primero no quedaban guardadas en appState.uploadedImages
+  // y desaparecían al recargar.
+  React.useEffect(() => {
+    window.recordUploadedImage = (item) => {
+      if (!item || !item.url) return;
+      setAppState(prev => {
+        const list = Array.isArray(prev.uploadedImages) ? prev.uploadedImages : [];
+        if (list.some(x => x.url === item.url)) return prev;
+        const next = [...list, item].slice(-200);
+        return Object.assign({}, prev, { uploadedImages: next });
+      });
+    };
+    return () => { delete window.recordUploadedImage; };
+  }, [setAppState]);
 
   // Keep the v3-compat globals in sync with the live appState.
   // Components (Sidebar, BlockCard, Inspector, etc.) read from window.PRODUCTS /
@@ -616,6 +632,19 @@ function App() {
       const sec = createBlock(spec.type);
       sec.id = mkId();
       setBlocks(prev => placeBlocks(prev, [sec]));
+      setInsertAfter(null);
+      setInnerTarget(null);
+      return;
+    }
+    // Divisores — tres variantes con createBlock
+    if (spec.type === 'divider_line' || spec.type === 'divider_short' || spec.type === 'divider_dots') {
+      const dv = createBlock(spec.type);
+      dv.id = mkId();
+      if (into) {
+        setBlocks(prev => _addToSection(prev, into.sectionId, into.columnIdx, dv));
+      } else {
+        setBlocks(prev => placeBlocks(prev, [dv]));
+      }
       setInsertAfter(null);
       setInnerTarget(null);
       return;

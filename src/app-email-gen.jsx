@@ -285,6 +285,26 @@ function ctaBlockHtml(b) {
   return '<tr><td align="' + align + '" style="padding:8px 20px">' + inner + '</td></tr>'
 }
 
+/* Divisor visual entre bloques. 3 variantes:
+   - line: línea horizontal fina full width
+   - short: línea corta centrada (~80px), más elegante
+   - dots: tres puntos centrados, separador ornamental
+   Color y paddingV (vertical space) configurables. */
+function dividerBlockHtml(b) {
+  b = b || {}
+  const style = b.style || 'line'
+  const color = b.color || '#e2e8f0'
+  const padV = (typeof b.paddingV === 'number') ? Math.max(8, Math.min(80, b.paddingV)) : 24
+  if (style === 'dots') {
+    return '<tr><td align="center" style="padding:' + padV + 'px 20px;font-family:Helvetica,Arial,sans-serif;font-size:18px;letter-spacing:8px;color:' + color + ';line-height:1">·&nbsp;·&nbsp;·</td></tr>'
+  }
+  if (style === 'short') {
+    return '<tr><td align="center" style="padding:' + padV + 'px 20px"><div style="display:inline-block;width:80px;height:2px;background:' + color + ';border-radius:1px;line-height:0;font-size:0">&nbsp;</div></td></tr>'
+  }
+  // default: line
+  return '<tr><td style="padding:' + padV + 'px 20px"><div style="height:1px;background:' + color + ';line-height:0;font-size:0">&nbsp;</div></td></tr>'
+}
+
 function pimpamStepsHtml(config, lang) {
   const cfg = config || {}
   const steps = cfg.steps || [
@@ -416,6 +436,7 @@ function generateFullHtml(blocks, products, lang, brands, appState) {
       case 'video': out += freebirdHtml(b.config || b, lang); break
       case 'image': out += imageBlockHtml(b); break
       case 'cta': out += ctaBlockHtml(b); break
+      case 'divider': out += dividerBlockHtml(b); break
       case 'hero':
       case 'product_hero':
       case 'pimpam_hero': {
@@ -650,9 +671,10 @@ function v3BlocksToV2Blocks(v3Blocks, appState) {
         break
       }
 
-      // ─── image / cta — pass through unchanged (renderBlock handles them)
+      // ─── image / cta / divider — pass through unchanged (renderBlock handles them)
       case 'image':
-      case 'cta': {
+      case 'cta':
+      case 'divider': {
         out.push(Object.assign({}, b))
         break
       }
@@ -788,7 +810,7 @@ function renderEmailHtmlWithTracking(v3Blocks, appState, lang, customTitle, curr
 Object.assign(window, {
   CSS_BLOCK, escapeHtml,
   productCardHtml, productCardCompactHtml, productSingleHtml, productPairHtml, productTrioHtml,
-  brandStripHtml, textBlockHtml, freebirdHtml, pimpamHeroHtml, pimpamStepsHtml,
+  brandStripHtml, textBlockHtml, freebirdHtml, pimpamHeroHtml, pimpamStepsHtml, dividerBlockHtml,
   generateFullHtml, v3BlocksToV2Blocks, renderEmailHtml,
   addUtmParams, generateCampaignName, detectCampaignBrand, renderEmailHtmlWithTracking,
 })

@@ -125,6 +125,9 @@ function Inspector({ block, onUpdate, onClose, onDelete, onDuplicate, lang, setL
         {block.type === 'cta' && (
           <CtaBlockEditor block={block} onUpdate={onUpdate} />
         )}
+        {block.type === 'divider' && (
+          <DividerBlockEditor block={block} onUpdate={onUpdate} />
+        )}
 
         {/* Slider universal: ancho del bloque (aplica a todos los tipos
             excepto secciones, que ya gestionan su layout). */}
@@ -1226,6 +1229,47 @@ function CtaBlockEditor({ block, onUpdate }) {
   );
 }
 
+/* Editor de divisores. 3 estilos + color + spacing vertical. */
+function DividerBlockEditor({ block, onUpdate }) {
+  const set = (k, v) => onUpdate(block.id, { ...block, [k]: v });
+  const style = block.style || 'line';
+  const color = block.color || '#e2e8f0';
+  const padV = (typeof block.paddingV === 'number') ? block.paddingV : 24;
+  const styles = [
+    { id: 'line', label: 'Línea fina', preview: <div style={{width:'100%', height:1, background:'currentColor'}}/> },
+    { id: 'short', label: 'Línea corta', preview: <div style={{width:30, height:2, background:'currentColor', borderRadius:1, margin:'0 auto'}}/> },
+    { id: 'dots', label: 'Puntos', preview: <div style={{textAlign:'center', letterSpacing:6, fontSize:16, lineHeight:1}}>···</div> },
+  ];
+  return (
+    <Section title="Divisor">
+      <Field label="Estilo">
+        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+          {styles.map(s => (
+            <button key={s.id}
+              className={'btn ' + (style === s.id ? 'btn-primary' : 'btn-ghost')}
+              style={{padding:'10px 12px', justifyContent:'flex-start', gap:12, alignItems:'center', display:'flex'}}
+              onClick={() => set('style', s.id)}>
+              <span style={{flex:1, textAlign:'left', fontSize:12}}>{s.label}</span>
+              <span style={{flex:1.5, color: style === s.id ? '#fff' : color}}>{s.preview}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Color">
+        <div style={{display:'flex', gap:6, alignItems:'center'}}>
+          <input type="color" value={color} onChange={e => set('color', e.target.value)} style={{width:34, height:30, padding:0, border:'1px solid var(--border)', borderRadius:4, cursor:'pointer'}}/>
+          <input className="input mono" style={{fontSize:11}} value={color} onChange={e => set('color', e.target.value)} />
+        </div>
+      </Field>
+      <Field label={'Espacio vertical: ' + padV + 'px'} hint="Padding arriba y abajo del divisor.">
+        <input type="range" min={8} max={80} step={4} value={padV}
+          onChange={e => set('paddingV', parseInt(e.target.value, 10))}
+          style={{width:'100%'}}/>
+      </Field>
+    </Section>
+  );
+}
+
 /* Control de ancho + alineación del bloque, universal para casi todos
    los tipos. El email-gen y el canvas aplican estos valores. */
 function BlockWidthControl({ block, onUpdate }) {
@@ -1283,4 +1327,4 @@ function BlockWidthControl({ block, onUpdate }) {
   );
 }
 
-Object.assign(window, { Inspector, AiTextPopover, ImageBlockEditor, CtaBlockEditor, BlockWidthControl });
+Object.assign(window, { Inspector, AiTextPopover, ImageBlockEditor, CtaBlockEditor, DividerBlockEditor, BlockWidthControl });
