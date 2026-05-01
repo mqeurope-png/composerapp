@@ -108,6 +108,16 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
     if (isNew && collection !== 'users' && typeof autoHideForOthers === 'function') {
       setTimeout(() => autoHideForOthers(collection, data.id), 0);
     }
+    // Log la actividad: action `<kind>_create` o `<kind>_update` con el
+    // id y nombre/título del item para que el panel admin pueda mostrar
+    // "Sara creó la plantilla 'Demo PimPam'" sin tener que cruzar refs.
+    if (typeof window.logActivity === 'function') {
+      const action = (isNew ? kind + '_create' : kind + '_update');
+      window.logActivity(action, {
+        collection, id: data.id,
+        name: data.name || data.title || data.label || data.id,
+      });
+    }
     setEditing(null);
   };
 
@@ -125,6 +135,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   const adminNavItems = [
     { id: 'users', label: 'Usuarios', icon: 'lock', count: users.length },
     { id: 'images', label: 'Imágenes', icon: 'copy', count: ((appState && appState.uploadedImages) || []).length },
+    { id: 'activity', label: 'Actividad', icon: 'eye', count: ((appState && appState.activityLog) || []).length },
     { id: 'ai', label: 'Asistente IA', icon: 'sparkles' },
     { id: 'settings', label: 'Ajustes', icon: 'settings' },
   ];
@@ -139,7 +150,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
   // Bounce non-admin users away from admin-only tabs (defensive — they
   // shouldn't be able to reach them via UI, but state may be stale)
   React.useEffect(() => {
-    if (!isAdmin && (tab === 'users' || tab === 'ai' || tab === 'settings' || tab === 'images')) {
+    if (!isAdmin && (tab === 'users' || tab === 'ai' || tab === 'settings' || tab === 'images' || tab === 'activity')) {
       setTab('products');
     }
   }, [isAdmin, tab]);
@@ -157,6 +168,7 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
     ai: { title: 'Asistente de redacción', sub: 'API key y tono por idioma. Solo admin.' },
     settings: { title: 'Ajustes', sub: 'Sincronización, acceso y preferencias. Solo admin.' },
     images: { title: 'Biblioteca de imágenes', sub: 'Gestiona las imágenes subidas. Borrar aquí solo las quita de la biblioteca; el archivo en WordPress se conserva (puedes borrarlo desde boprint.net/wp-admin → Media).' },
+    activity: { title: 'Actividad', sub: 'Registro de acciones por usuario: logins, emails generados, plantillas guardadas, subidas de imagen, etc. Solo admin.' },
     mytone: { title: 'Mi tono IA', sub: 'Tu prompt personal por idioma. Solo lo ves tú y se aplica cuando pides ayuda al asistente.' },
   };
   const current = titleMap[tab] || titleMap.products;
@@ -546,6 +558,10 @@ function Backoffice({ brandFilter, setBrandFilter, appState, setAppState, onLoad
 
         {tab === 'images' && isAdmin && (
           <ImageLibraryAdminPanel appState={appState} setAppState={setAppState} />
+        )}
+
+        {tab === 'activity' && isAdmin && (
+          <ActivityPanel appState={appState} setAppState={setAppState} />
         )}
 
         {tab === 'ai' && <AISettingsPanel appState={appState} setAppState={setAppState} />}
@@ -3040,6 +3056,395 @@ function ImageLibraryAdminPanel({ appState, setAppState }) {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Panel admin de actividad por usuario. Lee `appState.activityLog` (lista
+   capped a 1000 que mantiene el helper window.logActivity, definido en
+   app-main.jsx). Permite filtrar por usuario, tipo de acción y rango de
+   fechas, y muestra los eventos agrupados por día. Solo visible al admin
+   — la prop isAdmin se valida en el render de Backoffice. Apr 2026. */
+const ACTIVITY_ACTION_LABELS = {
+  // Sesión
+  login: { icon: '→', label: 'Inicio de sesión', color: '#16a34a' },
+  login_failed: { icon: '✗', label: 'Login fallido', color: '#dc2626' },
+  logout: { icon: '←', label: 'Cierre de sesión', color: '#94a3b8' },
+  // Email composer
+  block_add: { icon: '+', label: 'Añadió bloque', color: '#0891b2' },
+  email_copy: { icon: '⎘', label: 'Copió HTML del email', color: '#2563eb' },
+  email_html_download: { icon: '↓', label: 'Descargó .html', color: '#2563eb' },
+  email_pdf_export: { icon: '↓', label: 'Exportó a PDF', color: '#7c3aed' },
+  email_doc_export: { icon: '↓', label: 'Exportó a Word', color: '#7c3aed' },
+  // Plantillas
+  template_create: { icon: '★', label: 'Creó plantilla', color: '#16a34a' },
+  template_update: { icon: '✎', label: 'Actualizó plantilla', color: '#0891b2' },
+  template_load: { icon: '▶', label: 'Cargó plantilla', color: '#94a3b8' },
+  // Catálogo
+  product_create: { icon: '+', label: 'Creó producto', color: '#16a34a' },
+  product_update: { icon: '✎', label: 'Actualizó producto', color: '#0891b2' },
+  brand_create: { icon: '+', label: 'Creó marca', color: '#16a34a' },
+  brand_update: { icon: '✎', label: 'Actualizó marca', color: '#0891b2' },
+  text_create: { icon: '+', label: 'Creó texto', color: '#16a34a' },
+  text_update: { icon: '✎', label: 'Actualizó texto', color: '#0891b2' },
+  standalone_create: { icon: '+', label: 'Creó bloque suelto', color: '#16a34a' },
+  standalone_update: { icon: '✎', label: 'Actualizó bloque suelto', color: '#0891b2' },
+  composed_create: { icon: '+', label: 'Creó bloque compuesto', color: '#16a34a' },
+  composed_update: { icon: '✎', label: 'Actualizó bloque compuesto', color: '#0891b2' },
+  cta_create: { icon: '+', label: 'Creó CTA', color: '#16a34a' },
+  cta_update: { icon: '✎', label: 'Actualizó CTA', color: '#0891b2' },
+  user_create: { icon: '+', label: 'Creó usuario', color: '#16a34a' },
+  user_update: { icon: '✎', label: 'Actualizó usuario', color: '#0891b2' },
+  // Imágenes + IA
+  image_upload: { icon: '↑', label: 'Subió imagen', color: '#ea580c' },
+  ai_agent_run: { icon: '✨', label: 'Ejecutó IA', color: '#a855f7' },
+};
+
+function _activityLabelFor(action) {
+  return ACTIVITY_ACTION_LABELS[action] || { icon: '·', label: action, color: '#94a3b8' };
+}
+
+/* Format relative time: "ahora", "hace 3 min", "hace 2 h" — para timestamps
+   recientes. Para más viejos cae a fecha absoluta. */
+function _activityTime(ts, now) {
+  const diff = now - ts;
+  if (diff < 30 * 1000) return 'ahora';
+  if (diff < 60 * 1000) return 'hace ' + Math.floor(diff / 1000) + ' s';
+  if (diff < 60 * 60 * 1000) return 'hace ' + Math.floor(diff / 60000) + ' min';
+  if (diff < 24 * 60 * 60 * 1000) return 'hace ' + Math.floor(diff / 3600000) + ' h';
+  const d = new Date(ts);
+  return d.toLocaleString('es-ES', { hour:'2-digit', minute:'2-digit' });
+}
+function _activityDayLabel(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+  if (sameDay) return 'Hoy';
+  const y = new Date(today); y.setDate(y.getDate() - 1);
+  if (d.getFullYear() === y.getFullYear() && d.getMonth() === y.getMonth() && d.getDate() === y.getDate()) return 'Ayer';
+  return d.toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long', year: d.getFullYear() !== today.getFullYear() ? 'numeric' : undefined });
+}
+
+/* Reconstruye eventos pasados a partir de campos persistidos en appState
+   (uploadedImages.addedAt, items.createdBy + createdAt). Los marca con
+   `synthetic:true` para que se distingan de eventos en tiempo real, y
+   asigna ids estables `synth-<source>-<originalId>` para que re-ejecutar
+   el backfill no duplique entradas (set por id en el merge).
+   Devuelve un array de eventos ordenados por ts ascendente. */
+function _backfillActivityFromHistory(appState) {
+  if (!appState) return [];
+  const out = [];
+  const push = (ts, action, userId, details, idSuffix) => {
+    if (!ts) return;
+    out.push({
+      id: 'synth-' + idSuffix,
+      ts: Number(ts),
+      userId: userId || null,
+      action,
+      details: details || {},
+      synthetic: true,
+    });
+  };
+  // 1) Subidas de imagen — uploadedImages[].addedAt
+  const imgs = Array.isArray(appState.uploadedImages) ? appState.uploadedImages : [];
+  imgs.forEach((it, i) => {
+    if (!it || !it.addedAt) return;
+    push(it.addedAt, 'image_upload', null, {
+      url: it.url, name: it.name, size: it.size, brand: it.brand || null,
+    }, 'img-' + i + '-' + (it.url || '').slice(-30));
+  });
+  // 2) Creaciones de items con createdBy + createdAt — distintos kinds.
+  const kindMap = [
+    { coll: 'templates', kind: 'template' },
+    { coll: 'composedBlocks', kind: 'composed' },
+    { coll: 'standaloneBlocks', kind: 'standalone' },
+    { coll: 'prewrittenTexts', kind: 'text' },
+    { coll: 'ctaBlocks', kind: 'cta' },
+    { coll: 'products', kind: 'product' },
+    { coll: 'brands', kind: 'brand' },
+  ];
+  kindMap.forEach(({ coll, kind }) => {
+    const list = Array.isArray(appState[coll]) ? appState[coll] : [];
+    list.forEach(item => {
+      if (!item || !item.createdBy || !item.createdAt) return;
+      push(item.createdAt, kind + '_create', item.createdBy, {
+        collection: coll,
+        id: item.id,
+        name: item.name || item.title || item.label || item.id,
+      }, kind + '-' + item.id);
+    });
+  });
+  // Orden cronológico ascendente para que el merge respete el orden global
+  out.sort((a, b) => a.ts - b.ts);
+  return out;
+}
+
+function ActivityPanel({ appState, setAppState }) {
+  const log = Array.isArray(appState?.activityLog) ? appState.activityLog : [];
+  const users = (appState && appState.users) || [];
+  const userById = React.useMemo(() => {
+    const m = {};
+    users.forEach(u => { m[u.id] = u; });
+    return m;
+  }, [users]);
+
+  const [userFilter, setUserFilter] = React.useState('all');
+  const [actionFilter, setActionFilter] = React.useState('all');
+  const [search, setSearch] = React.useState('');
+  const [now, setNow] = React.useState(Date.now());
+
+  // Refresca timestamps relativos cada 30 s — sin esto "hace 3 min" se queda
+  // congelado mientras el panel está abierto.
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Conteos para los chips de filtro (sobre TODO el log, sin aplicar filtros)
+  const counts = React.useMemo(() => {
+    const c = { all: log.length, byUser: {}, byAction: {} };
+    for (const e of log) {
+      const u = e.userId || '__none__';
+      c.byUser[u] = (c.byUser[u] || 0) + 1;
+      c.byAction[e.action] = (c.byAction[e.action] || 0) + 1;
+    }
+    return c;
+  }, [log]);
+
+  // Lista filtrada — más reciente primero. activityLog se guarda en orden
+  // cronológico ascendente, así que lo invertimos para presentación.
+  const filtered = React.useMemo(() => {
+    const sLow = search.trim().toLowerCase();
+    const out = [];
+    for (let i = log.length - 1; i >= 0; i--) {
+      const e = log[i];
+      if (userFilter !== 'all') {
+        if (userFilter === 'none' ? e.userId : e.userId !== userFilter) continue;
+      }
+      if (actionFilter !== 'all' && e.action !== actionFilter) continue;
+      if (sLow) {
+        const haystack = [
+          e.action,
+          (userById[e.userId] && userById[e.userId].name) || '',
+          JSON.stringify(e.details || {}),
+        ].join(' ').toLowerCase();
+        if (!haystack.includes(sLow)) continue;
+      }
+      out.push(e);
+    }
+    return out;
+  }, [log, userFilter, actionFilter, search, userById]);
+
+  // Agrupar por día para los headers "Hoy / Ayer / 28 abr 2026".
+  const groupedByDay = React.useMemo(() => {
+    const out = [];
+    let currentDay = null;
+    let currentBucket = null;
+    for (const e of filtered) {
+      const dayKey = new Date(e.ts).toISOString().slice(0, 10);
+      if (dayKey !== currentDay) {
+        currentDay = dayKey;
+        currentBucket = { day: dayKey, label: _activityDayLabel(e.ts), events: [] };
+        out.push(currentBucket);
+      }
+      currentBucket.events.push(e);
+    }
+    return out;
+  }, [filtered]);
+
+  // Acciones únicas presentes en el log (para el dropdown de filtro de acción)
+  const actionsInLog = React.useMemo(() => {
+    return Array.from(new Set(log.map(e => e.action))).sort();
+  }, [log]);
+
+  const clearLog = () => {
+    if (!window.confirm('¿Borrar TODO el registro de actividad?\n\nNo afecta a los datos del email composer — solo borra el historial de eventos.')) return;
+    setAppState(prev => Object.assign({}, prev, { activityLog: [] }));
+  };
+  // Reconstruye eventos pasados a partir de campos persistidos en otros
+  // sitios del state (uploadedImages.addedAt, items.createdBy/createdAt).
+  // Idempotente: usa ids estables `synth-…` así que re-ejecutar solo
+  // reemplaza los sintéticos previos, no los duplica.
+  const synthCount = React.useMemo(() => _backfillActivityFromHistory(appState).length, [appState]);
+  const backfillLog = () => {
+    const synthesized = _backfillActivityFromHistory(appState);
+    if (synthesized.length === 0) {
+      window.alert('No se encontraron eventos pasados que reconstruir. Las imágenes subidas tienen addedAt y los items recientes (creados tras el último fix) tienen createdBy/createdAt — todo lo demás no se guardaba.');
+      return;
+    }
+    if (!window.confirm('Reconstruir ' + synthesized.length + ' eventos sintéticos a partir del historial guardado.\n\nIncluye: subidas de imagen + creaciones de items con autor conocido.\nNO incluye: copias de email, cargas de plantilla, logins, etc. (no se guardaban antes).\n\nLos eventos sintéticos llevan flag `synthetic:true` y se distinguen de los reales. ¿Continuar?')) return;
+    setAppState(prev => {
+      const existing = Array.isArray(prev.activityLog) ? prev.activityLog : [];
+      // Quitamos sintéticos previos (los reemplazamos por el nuevo set,
+      // por si hay items nuevos desde el último backfill); conservamos
+      // todo evento real (no synthetic).
+      const real = existing.filter(e => !e.synthetic);
+      // Merge + sort + cap a 1000
+      const merged = [...synthesized, ...real].sort((a, b) => a.ts - b.ts);
+      return Object.assign({}, prev, { activityLog: merged.slice(-1000) });
+    });
+  };
+  const exportLog = () => {
+    try {
+      const blob = new Blob([JSON.stringify(log, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'bomedia-activity-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert('No se pudo exportar: ' + e.message); }
+  };
+
+  const renderDetails = (details) => {
+    if (!details || typeof details !== 'object' || !Object.keys(details).length) return null;
+    // Mostrar campos prioritarios primero — el resto en JSON compacto.
+    const priority = ['name', 'templateName', 'title', 'prompt', 'type', 'url', 'blockCount', 'lang', 'role'];
+    const parts = [];
+    for (const k of priority) {
+      if (details[k] != null && details[k] !== '') {
+        parts.push(<span key={k} style={{marginRight:8}}><span style={{color:'var(--text-subtle)'}}>{k}:</span> {String(details[k]).slice(0, 80)}</span>);
+      }
+    }
+    return parts.length > 0 ? <div style={{fontSize:11, color:'var(--text-muted)', marginTop:2}}>{parts}</div> : null;
+  };
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:14, maxWidth:1100}}>
+      <div className="product-card" style={{padding:18}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:10, flexWrap:'wrap'}}>
+          <Icon name="eye" size={18}/>
+          <div style={{fontSize:14, fontWeight:600, flex:1}}>Registro de actividad · {log.length} eventos</div>
+          <button
+            className="btn btn-ghost"
+            style={{fontSize:11}}
+            onClick={backfillLog}
+            disabled={synthCount === 0}
+            title={synthCount > 0
+              ? 'Reconstruye ' + synthCount + ' eventos pasados a partir de los timestamps guardados en uploadedImages y los createdBy/createdAt de items.'
+              : 'Sin eventos pasados que reconstruir.'}
+          >
+            <Icon name="undo" size={11}/> Reconstruir desde historial {synthCount > 0 && <span style={{marginLeft:4, fontSize:10, color:'var(--text-muted)'}}>({synthCount})</span>}
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:11}} onClick={exportLog} disabled={log.length === 0}>
+            <Icon name="download" size={11}/> Exportar JSON
+          </button>
+          <button className="btn btn-ghost" style={{fontSize:11, color:'var(--danger)'}} onClick={clearLog} disabled={log.length === 0}>
+            <Icon name="trash" size={11}/> Borrar todo
+          </button>
+        </div>
+        {log.some(e => e.synthetic) && (
+          <div style={{padding:'8px 12px', background:'color-mix(in oklch, var(--accent) 10%, var(--bg-sunken))', borderRadius:'var(--r-sm)', fontSize:11, color:'var(--text-muted)', marginBottom:12, lineHeight:1.5}}>
+            ℹ️ Hay eventos <strong>sintéticos</strong> (marcados con borde discontinuo abajo) reconstruidos del historial guardado en otros campos. No son eventos en tiempo real — son aproximaciones de cuándo se subió/creó cada cosa.
+          </div>
+        )}
+
+        <div style={{display:'flex', flexDirection:'column', gap:10, marginBottom:14}}>
+          {/* Búsqueda libre */}
+          <div className="bo-search" style={{minWidth:260}}>
+            <Icon name="search" size={14}/>
+            <input placeholder="Buscar en acción, usuario, detalles…" value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+
+          {/* Filtro por usuario */}
+          <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', fontWeight:600, letterSpacing:0.3, marginRight:4}}>Usuario:</span>
+            <button className={'brand-chip' + (userFilter === 'all' ? ' active' : '')} onClick={() => setUserFilter('all')}>
+              Todos <span className="mono" style={{opacity:0.6}}>{counts.all}</span>
+            </button>
+            {users.map(u => {
+              const c = counts.byUser[u.id] || 0;
+              return (
+                <button key={u.id} className={'brand-chip' + (userFilter === u.id ? ' active' : '')} onClick={() => setUserFilter(u.id)} disabled={!c} style={{opacity: c ? 1 : 0.4}}>
+                  {u.name} <span className="mono" style={{opacity:0.6}}>{c}</span>
+                </button>
+              );
+            })}
+            {counts.byUser.__none__ > 0 && (
+              <button className={'brand-chip' + (userFilter === 'none' ? ' active' : '')} onClick={() => setUserFilter('none')}>
+                Sin usuario <span className="mono" style={{opacity:0.6}}>{counts.byUser.__none__}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Filtro por tipo de acción */}
+          <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
+            <span style={{fontSize:11, color:'var(--text-muted)', fontWeight:600, letterSpacing:0.3, marginRight:4}}>Acción:</span>
+            <button className={'brand-chip' + (actionFilter === 'all' ? ' active' : '')} onClick={() => setActionFilter('all')}>
+              Todas
+            </button>
+            {actionsInLog.map(a => {
+              const lab = _activityLabelFor(a);
+              return (
+                <button key={a} className={'brand-chip' + (actionFilter === a ? ' active' : '')} onClick={() => setActionFilter(a)} title={a}>
+                  <span style={{color: lab.color, marginRight:4}}>{lab.icon}</span>
+                  {lab.label} <span className="mono" style={{opacity:0.6}}>{counts.byAction[a]}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div style={{padding:'40px 20px', textAlign:'center', color:'var(--text-muted)', fontSize:13}}>
+            {log.length === 0 ? 'Aún no hay actividad registrada — los eventos aparecerán aquí cuando los usuarios usen la app.' : 'Sin eventos con esos filtros.'}
+          </div>
+        ) : (
+          <div style={{display:'flex', flexDirection:'column', gap:14}}>
+            {groupedByDay.map(g => (
+              <div key={g.day}>
+                <div style={{
+                  fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:1,
+                  color:'var(--text-muted)', marginBottom:6, paddingBottom:4,
+                  borderBottom:'1px solid var(--border)',
+                }}>
+                  {g.label} · {g.events.length} {g.events.length === 1 ? 'evento' : 'eventos'}
+                </div>
+                <div style={{display:'flex', flexDirection:'column', gap:2}}>
+                  {g.events.map(e => {
+                    const u = userById[e.userId];
+                    const lab = _activityLabelFor(e.action);
+                    return (
+                      <div key={e.id} style={{
+                        display:'grid', gridTemplateColumns:'auto auto 1fr auto', gap:10,
+                        alignItems:'baseline', padding:'6px 10px',
+                        borderRadius:'var(--r-sm)', fontSize:12,
+                        // Sintéticos = borde discontinuo + opacidad ligera, así
+                        // se distinguen visualmente de los eventos en vivo.
+                        border: e.synthetic ? '1px dashed var(--border-strong)' : '1px solid transparent',
+                        opacity: e.synthetic ? 0.85 : 1,
+                      }}>
+                        <span style={{
+                          width:22, height:22, borderRadius:11, display:'inline-grid', placeItems:'center',
+                          background:'color-mix(in oklch, ' + lab.color + ' 14%, transparent)',
+                          color: lab.color, fontWeight:700, fontSize:11,
+                        }} title={e.action}>{lab.icon}</span>
+                        <span style={{fontWeight:600, color:'var(--text)', minWidth:120}}>
+                          {u ? u.name : (e.userId || <em style={{color:'var(--text-subtle)'}}>—</em>)}
+                          {u && u.role === 'admin' && <span style={{marginLeft:4, fontSize:9, padding:'1px 5px', background:'var(--bg-sunken)', borderRadius:3, fontWeight:600, color:'var(--text-muted)'}}>admin</span>}
+                        </span>
+                        <span style={{color:'var(--text)'}}>
+                          <span style={{color: lab.color, fontWeight:500}}>{lab.label}</span>
+                          {renderDetails(e.details)}
+                        </span>
+                        <span className="mono" style={{fontSize:10, color:'var(--text-subtle)', whiteSpace:'nowrap'}} title={new Date(e.ts).toLocaleString('es-ES')}>
+                          {_activityTime(e.ts, now)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {log.length >= 1000 && (
+          <div style={{marginTop:12, padding:'8px 12px', background:'color-mix(in oklch, var(--accent) 8%, var(--bg-sunken))', borderRadius:'var(--r-sm)', fontSize:11, color:'var(--text-muted)'}}>
+            ℹ️ El registro está en su tope (1000 eventos). Los eventos más antiguos se descartan automáticamente al añadir nuevos.
           </div>
         )}
       </div>

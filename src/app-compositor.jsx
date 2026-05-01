@@ -1487,6 +1487,18 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, on
     setTimeout(() => setToast(''), 2400);
   };
 
+  // Helper compartido para los logs de export — evita repetir el mismo
+  // payload (título del email + nº de bloques + idioma) en cada handler.
+  const _logExport = (action) => {
+    if (typeof window.logActivity === 'function') {
+      window.logActivity(action, {
+        title: emailTitle || '',
+        blockCount: blocks.length,
+        lang,
+      });
+    }
+  };
+
   const handleDownloadHtml = () => {
     const blob = new Blob([emailHtml || '<html><body></body></html>'], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -1499,6 +1511,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, on
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setHtmlMenu(false);
     showToast('HTML descargado');
+    _logExport('email_html_download');
   };
 
   // Export as Word .doc — Word opens HTML files saved with .doc extension and
@@ -1527,6 +1540,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, on
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setHtmlMenu(false);
     showToast('Documento Word descargado · ábrelo con Word u Office Online');
+    _logExport('email_doc_export');
   };
 
   // Export as PDF — opens an off-screen iframe with the email HTML and
@@ -1569,6 +1583,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, on
     }
     setHtmlMenu(false);
     showToast('Abriendo diálogo de impresión · selecciona "Guardar como PDF"');
+    _logExport('email_pdf_export');
   };
 
   const handleCopyHtml = async () => {
@@ -1579,6 +1594,7 @@ function Canvas({ blocks, onUpdate, onDelete, onMove, onReorder, onDuplicate, on
     else if (r.ok) showToast('HTML copiado (texto plano)');
     else showToast('No se pudo copiar (revisa permisos)');
     setHtmlMenu(false);
+    if (r && r.ok) _logExport('email_copy');
   };
 
   const handleClear = () => {

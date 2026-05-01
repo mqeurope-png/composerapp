@@ -246,14 +246,57 @@ function App() {
   React.useEffect(() => {
     window.recordUploadedImage = (item) => {
       if (!item || !item.url) return;
+      let isNewUrl = false;
       setAppState(prev => {
         const list = Array.isArray(prev.uploadedImages) ? prev.uploadedImages : [];
         if (list.some(x => x.url === item.url)) return prev;
+        isNewUrl = true;
         const next = [...list, item].slice(-200);
         return Object.assign({}, prev, { uploadedImages: next });
       });
+      // Log solo la primera vez que vemos esa URL (así "abrir imagen ya
+      // existente" no genera ruido). El timeout 0 espera al commit del
+      // setAppState para no logear si la URL ya estaba.
+      setTimeout(() => {
+        if (isNewUrl && typeof window.logActivity === 'function') {
+          window.logActivity('image_upload', {
+            url: item.url, name: item.name, size: item.size, brand: item.brand || null,
+          });
+        }
+      }, 0);
     };
     return () => { delete window.recordUploadedImage; };
+  }, [setAppState]);
+
+  // ─── Registro de actividad por usuario ─────────────────────────
+  // Logger universal: cualquier módulo que tenga una acción de usuario
+  // relevante llama a window.logActivity('action_id', {detalles}). Lo
+  // empujamos a appState.activityLog (capped a 1000 entradas — FIFO) y
+  // el auto-save de Supabase lo persiste con el resto del estado. El
+  // panel "Actividad" del backoffice (admin-only) lo presenta.
+  // Apr 2026.
+  const currentUserIdRef = React.useRef(currentUserId);
+  React.useEffect(() => { currentUserIdRef.current = currentUserId; }, [currentUserId]);
+  React.useEffect(() => {
+    window.logActivity = (action, details) => {
+      if (!action) return;
+      const uid = currentUserIdRef.current;
+      // Permitimos eventos sin user (ej. login fallido) — quedan con userId:null.
+      const entry = {
+        id: 'act-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+        ts: Date.now(),
+        userId: uid || null,
+        action,
+        details: (details && typeof details === 'object') ? details : {},
+      };
+      setAppState(prev => {
+        const list = Array.isArray(prev.activityLog) ? prev.activityLog : [];
+        // Cap a 1000 — el más viejo se descarta al superar el límite
+        const next = list.length >= 1000 ? [...list.slice(-999), entry] : [...list, entry];
+        return Object.assign({}, prev, { activityLog: next });
+      });
+    };
+    return () => { delete window.logActivity; };
   }, [setAppState]);
 
   // Keep the v3-compat globals in sync with the live appState.
@@ -614,6 +657,9 @@ function App() {
     } else {
       setEmailTitle(tpl.name || '');
     }
+    if (typeof window.logActivity === 'function') {
+      window.logActivity('template_load', { templateId: tplId, templateName: tpl.name, blockCount: exp.length });
+    }
   };
 
   // Save the current canvas into an existing template (overwrite its blocks).
@@ -626,6 +672,10 @@ function App() {
         ? { ...t, compositorBlocks: compBlocks, blocks: [] }
         : t),
     }));
+    if (typeof window.logActivity === 'function') {
+      const tpl = (appState.templates || []).find(t => t.id === tplId);
+      window.logActivity('template_update', { templateId: tplId, templateName: tpl?.name, blockCount: compBlocks.length });
+    }
   };
 
   // Save the current canvas as a brand new template.
@@ -656,6 +706,9 @@ function App() {
     // y los demás pueden hacerlo visible para sí mismos desde BO.
     if (currentUser && currentUser.role !== 'admin') {
       setTimeout(() => autoHideForOthers('templates', id), 0);
+    }
+    if (typeof window.logActivity === 'function') {
+      window.logActivity('template_create', { templateId: id, templateName: tpl.name, blockCount: compBlocks.length });
     }
     return tpl;
   };
@@ -854,6 +907,16 @@ function App() {
     }
     setInsertAfter(null);
     setInnerTarget(null);
+    // Log la adición — un evento por llamada a addBlock (no por bloque,
+    // porque un template-load añade muchos a la vez y queremos ver "cargó
+    // plantilla X" no 12 entradas "block_add"). Solo registramos lo que
+    // describe la acción del user.
+    if (typeof window.logActivity === 'function') {
+      const summary = spec.templateId ? null  // template_load se logea aparte
+        : { type: spec.type, productId: spec.productId, textId: spec.textId,
+            standaloneId: spec.standaloneId, composedId: spec.composedId };
+      if (summary) window.logActivity('block_add', summary);
+    }
   };
 
   // Section-aware mutation helpers. They operate at top level first, and if
@@ -1152,12 +1215,27 @@ function App() {
         setCurrentUserId(user.id);
         setLoginValue('');
         setLoginError(false);
+        // El logActivity necesita currentUserIdRef ya actualizado — pero el
+        // ref se sincroniza en el siguiente effect tras setCurrentUserId.
+        // Usamos setTimeout(0) para correr el log tras el commit.
+        setTimeout(() => {
+          if (typeof window.logActivity === 'function') {
+            window.logActivity('login', { userId: user.id, role: user.role });
+          }
+        }, 0);
       } else {
         setLoginError(true);
+        if (typeof window.logActivity === 'function') {
+          // Log con userId que intentó loguearse aunque la pwd fallara
+          window.logActivity('login_failed', { attemptedUserId: loginUserId });
+        }
       }
     });
   };
   const logout = () => {
+    if (typeof window.logActivity === 'function') {
+      window.logActivity('logout', {});
+    }
     setCurrentUserId(null);
     setMode('compositor');
     setLoginValue('');

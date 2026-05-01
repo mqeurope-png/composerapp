@@ -789,6 +789,16 @@ async function runAgent({ prompt, ctx, onStep }) {
     blocks: (ctx.blocks || []).slice(),
     lang: ctx.lang || 'es',
   }
+  // Log de actividad: registramos el prompt del user (truncado a 240
+  // chars para no inflar el log) y el nº de bloques antes de ejecutar.
+  // El resultado/iteraciones se logea aparte al final.
+  if (typeof window !== 'undefined' && typeof window.logActivity === 'function') {
+    window.logActivity('ai_agent_run', {
+      prompt: String(prompt || '').slice(0, 240),
+      blocksBefore: work.blocks.length,
+      lang: work.lang,
+    })
+  }
   const sysContent = AGENT_SYSTEM_PROMPT + '\n\n' + buildAgentContext({ appState: ctx.appState, blocks: work.blocks, lang: work.lang })
   const messages = [
     { role: 'system', content: sysContent },
